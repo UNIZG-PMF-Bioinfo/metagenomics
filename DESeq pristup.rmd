@@ -1,0 +1,193 @@
+---
+title: "DESeq"
+output: html_document
+---
+
+```{}
+library("DESeq2")
+library("Biostrings")
+library("Biobase")
+library("dplyr")
+library("plyr")
+library("stringr")
+library("coRdon")
+library("data.table")
+library("ggplot2")
+library("dplyr")
+library("pheatmap")
+library("RColorBrewer")
+library("ggbiplot")
+library("pathview")
+```
+
+```{r}
+my_fasta_file_folder <- "C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\60uzoraka"
+codonsInSamples <- readSet(my_fasta_file_folder, prepend.filenames = T)
+codonsInSamples2 <- codonTable(codonsInSamples)
+
+#head(codonsInSamples2)
+```
+
+```{r}
+#samples <- str_extract(getID(codonsInSamples3), "[HL]D")
+samples <- str_extract(getID(codonsInSamples2), "[HL]D\\d+")
+#s2 <- substr(samples,1,1)
+```
+
+```{r}
+melp <- MELP(codonsInSamples2, ribosomal = TRUE)
+```
+
+
+Density plot za 10 ^ meadian(MELP):
+```{r}
+dt <- data.table(sample = samples, genes = getKO(codonsInSamples2), MELP = as.numeric(melp))
+dt[, MELP := median(MELP), by = c("sample", "genes")]
+ggplot(dt, aes(10^MELP)) + geom_density() + coord_cartesian(xlim = c(0,20))
+```
+
+
+Priprema podataka:
+```{r}
+dt <- data.table(sample = samples, genes = getKO(codonsInSamples2), MELP = as.numeric(melp))
+dt[, MELP := round(10^median(MELP)), by = c("sample", "genes")]
+dt <- unique(dt)
+
+dt <- dcast(dt, genes ~ sample, value.var = "MELP")
+dt[is.na(dt)] <- 0
+
+dt <- as.data.frame(dt)
+rownames(dt) <- dt$genes
+dt <- dt[, 2:ncol(dt)]
+```
+
+
+DESeq:
+```{r}
+coldata <- data.frame(sample = samples)
+coldata <- data.frame(sample = unique(samples))
+coldata$condition <- "healthy"
+coldata$condition[which(substr(coldata$sample, 1, 1) == "L")] <- "cirrhotic"
+coldata$condition <- as.factor(coldata$condition)
+
+dataset <- DESeqDataSetFromMatrix(countData = dt, colData = coldata, design = ~ condition)
+#head(assay(dataset))
+```
+
+```{r}
+#pre-fitlering ne treba raditi jer su prethodno vec uklonjeni redovi koji imaju 0
+#dataset <- dataset[ rowSums(counts(dataset)) > 1, ]
+#nrow(dataset)
+```
+
+Transformation
+```{r}
+rlmean <- rlog(dataset, fitType = "mean")
+#vsd <- vst(dataset)
+#rld <- rlog(dataset)
+```
+
+```{r}
+dds <- estimateSizeFactors(dataset)
+
+df <- bind_rows(
+  as_data_frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
+         mutate(transformation = "log2(x + 1)"),
+  as_data_frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"),
+  as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"),
+  as_data_frame(assay(rlmean)[, 1:2]) %>% mutate(transformation = "rlog_mean"))
+  
+colnames(df)[1:2] <- c("x", "y")  
+
+ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) + coord_fixed() + facet_grid( . ~ transformation)  
+```
+
+
+```{r}
+distances <- dist(t(assay(rlmean)))
+```
+
+```{r}
+sampleDistMatrix <- as.matrix(distances)
+rownames(sampleDistMatrix) <- unique(samples)
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = distances,
+         clustering_distance_cols = distances,
+         col = colors, 
+         cellheight = 6,
+         fontsize = 5)
+```
+
+PCA plot:
+```{}
+coldata <- data.frame(sample = substr(unique(samples), 1, 1))
+dataset <- DESeqDataSetFromMatrix(countData = dt[, 2:ncol(dt)], colData = coldata, design = ~ sample)
+rlmean <- rlog(dataset, fitType = "mean")
+
+pcaData <- plotPCA(rlmean, intgroup = "sample", returnData = TRUE)
+plotPCA(rlmean, intgroup = "sample")
+```
+
+
+
+```{}
+install.packages("devtools")
+library(devtools)
+install_github("vqv/ggbiplot")
+```
+
+```{r}
+rlog_values <- t(rlog(counts(dataset)))
+colnames(rlog_values) <- dt$genes
+PCA <- prcomp(rlog_values, scale. = TRUE)
+ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+```
+
+DESeq:
+```{r}
+analysis <- DESeq(dataset)
+res <- results(analysis)
+summary(res)
+```
+
+
+Analiza top gena:
+padj < 0,05
+LFC > 0, 1, 2
+pathview
+```{r}
+#padj < 0,05
+length(which(res$padj < 0.05, arr.ind = T))
+res[which(res$padj < 0.05, arr.ind = T), ]
+
+#pvalue < 0,05
+length(which(res$pvalue < 0.05, arr.ind = T))
+res[which(res$pvalue < 0.05, arr.ind = T), ]
+
+#LFC > 2
+length(which(res$lfcSE > 2, arr.ind = T))
+res[which(res$lfcSE > 2, arr.ind = T), ]
+
+#LFC > 2 i pvalue < 0,05 
+length(which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T))  #41 gen
+topGenes <- res[which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T), ]
+topGenes <- res[which(res$padj < 0.05, arr.ind = T), ]
+```
+
+Pathview:
+```{r}
+data(demo.paths)
+pv <- pathview(gene.data...)
+```
+
+
+
+
+
+
+
+
+
+²
