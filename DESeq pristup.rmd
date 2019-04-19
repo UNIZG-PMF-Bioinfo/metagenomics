@@ -18,6 +18,7 @@ library("pheatmap")
 library("RColorBrewer")
 library("ggbiplot")
 library("pathview")
+library("gage")
 ```
 
 ```{r}
@@ -50,6 +51,9 @@ ggplot(dt, aes(10^MELP)) + geom_density() + coord_cartesian(xlim = c(0,20))
 Priprema podataka:
 ```{r}
 dt <- data.table(sample = samples, genes = getKO(codonsInSamples2), MELP = as.numeric(melp))
+
+dtMelp <- copy(dt)
+
 dt[, MELP := round(10^median(MELP)), by = c("sample", "genes")]
 dt <- unique(dt)
 dt <- dcast(dt, genes ~ sample, value.var = "MELP")
@@ -66,7 +70,7 @@ coldata <- data.frame(sample = samples)
 coldata <- data.frame(sample = unique(samples))
 coldata$condition <- "healthy"
 coldata$condition[which(substr(coldata$sample, 1, 1) == "L")] <- "cirrhotic"
-coldata$condition <- as.factor(coldata$condition)
+coldata$condition <- factor(coldata$condition, levels = c("healthy", "cirrhotic"))
 dataset <- DESeqDataSetFromMatrix(countData = dt, colData = coldata, design = ~ condition)
 #head(assay(dataset))
 ```
@@ -140,6 +144,37 @@ summary(res)
 ```
 
 
+Metabolic Module Identification
+
+```{r}
+path.set <- kegg.gsets("ko")
+ko.gs <- path.set$kg.sets
+```
+
+Extraction of fold-change (M) values for the samples.
+```{r}
+sampleMVals <- as.data.frame(res$log2FoldChange)
+rownames(sampleMVals) <- enr_data$category
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(data.frame(row.names=rownames(res)[res$pvalue < 0.1],res$log2FoldChange[res$pvalue < 0.1]), gsets = ko.gs, samp = NULL, compare = "unpaired", FDR.adj = F)
+kegg.sig <- sigGeneSet(pathwayEnrich)
+kegg.sig
+```
+
+
+
+
+
+
+
+
+
+### beskorisni dio
+
+
 Analiza top gena:
 padj < 0,05
 LFC > 0, 1, 2
@@ -156,23 +191,59 @@ length(which(res$lfcSE > 2, arr.ind = T))
 res[which(res$lfcSE > 2, arr.ind = T), ]
 #LFC > 2 i pvalue < 0,05 
 length(which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T))  #41 gen
-topGenes <- res[which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T), ]
-topGenes <- res[which(res$padj < 0.05, arr.ind = T), ]
-topGenes <- which(res$padj < 0.05, arr.ind = T)
+#topGenes <- res[which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T), ]
+#topGenes <- res[which(res$padj < 0.05, arr.ind = T), ]
+topGenes4 <- which(res$padj < 0.05, arr.ind = T)
+topGenes41 <- res[which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T), ]
+top41 <- which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T)
 ```
 
+
+
 Pathview:
+```{r}
+require(KEGGREST)
+paths <- names(keggList("pathway"))
+paths <- regmatches(paths, regexpr("{2,4}\\d{5}", paths))
+#pnames <- unname(keggList("pathway"))
+
+data("demo.paths")
+```
+
 ```{r}
 setwd("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\pathview")
 #setwd("C:\\Users\\pavli\\Desktop\\FAKS\\DS\\4. semestar\\diplomski rad\\R\\pathview")
 #data(demo.paths)
-pv <- pathview(gene.data = dt[topGenes, ], pathway.id = demo.paths$sel.paths[3], species = "ko")
-pv <- pathview(gene.data = dt[topGenes, ], pathway.id = ???, species = "ko")
+pv <- pathview(gene.data = rownames(dt[topGenes41, ]), pathway.id = paths, species = "ko")
+pv <- pathview(gene.data = dt[topGenes4, ], pathway.id = paths, species = "ko")
+```
+
+###
+
+
+
+
+
+U DESeq dizajn dodaj sve ostale varijable (spol,...)
+
+```{r}
+library(readxl)
+table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\rad\\Supplementary information\\nature13568-s1\\Table 1.xlsx")
+table1 <- table1[1:181, c(2, 4:14)]
+seq_names <- readSet("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\svi uzorci", prepend.filenames = T)
+imena <- unique(str_extract(names(seq_names), "[HL]D\\d+"))
+selected <- paste(str_extract(imena, "[HL]D"), str_extract(imena, "\\d+"), sep = "-")
+table1 <- table1[table1$`Sample ID` %in% selected, ]
+table1$`Sample ID` <- imena   
 ```
 
 
+Ucitaj to bolje
 
-Kako znam koji pathway.id trebam?
+
+
+
+
 
 
 
