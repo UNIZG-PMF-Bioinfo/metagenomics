@@ -66,7 +66,6 @@ dt <- dt[, 2:ncol(dt)]
 
 DESeq:
 ```{r}
-coldata <- data.frame(sample = samples)
 coldata <- data.frame(sample = unique(samples))
 coldata$condition <- "healthy"
 coldata$condition[which(substr(coldata$sample, 1, 1) == "L")] <- "cirrhotic"
@@ -121,13 +120,9 @@ pheatmap(sampleDistMatrix,
 
 PCA plot:
 ```{}
-coldata <- data.frame(sample = substr(unique(samples), 1, 1))
-dataset <- DESeqDataSetFromMatrix(countData = dt[, 2:ncol(dt)], colData = coldata, design = ~ sample)
-rlmean <- rlog(dataset, fitType = "mean")
 pcaData <- plotPCA(rlmean, intgroup = "sample", returnData = TRUE)
 plotPCA(rlmean, intgroup = "sample")
 ```
-
 
 ```{r}
 rlog_values <- t(rlog(counts(dataset)))
@@ -154,7 +149,6 @@ ko.gs <- path.set$kg.sets
 Extraction of fold-change (M) values for the samples.
 ```{r}
 sampleMVals <- as.data.frame(res$log2FoldChange)
-rownames(sampleMVals) <- enr_data$category
 ```
 
 GAGE run
@@ -218,27 +212,59 @@ pv <- pathview(gene.data = rownames(dt[topGenes41, ]), pathway.id = paths, speci
 pv <- pathview(gene.data = dt[topGenes4, ], pathway.id = paths, species = "ko")
 ```
 
-###
 
-
-
-
-
-U DESeq dizajn dodaj sve ostale varijable (spol,...)
 
 ```{r}
 library(readxl)
-table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\rad\\Supplementary information\\nature13568-s1\\Table 1.xlsx")
-table1 <- table1[1:181, c(2, 4:14)]
-seq_names <- readSet("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\svi uzorci", prepend.filenames = T)
-imena <- unique(str_extract(names(seq_names), "[HL]D\\d+"))
-selected <- paste(str_extract(imena, "[HL]D"), str_extract(imena, "\\d+"), sep = "-")
-table1 <- table1[table1$`Sample ID` %in% selected, ]
-table1$`Sample ID` <- imena   
+table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text", "guess", "guess"))
+table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
+table1 <- table1[, c(1, 3:9, 11:13)]
+#seq_names <- readSet("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\svi uzorci", prepend.filenames = T)
+#imena <- unique(str_extract(names(seq_names), "[HL]D\\d+"))
+#selected <- paste(str_extract(imena, "[HL]D"), str_extract(imena, "\\d+"), sep = "-")
+#table1 <- table1[table1$`Sample ID` %in% selected, ]
+#table1$`Sample ID` <- imena   
+
 ```
 
 
-Ucitaj to bolje
+#######
+
+
+
+
+
+Korelacije:
+```{r}
+library(readxl)
+table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\rad\\Supplementary information\\nature13568-s1\\Table 1.xlsx", col_types = c("text", "text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
+table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
+table1 <- table1[1:181, c(2, 4:10, 12:14)]
+table1$condition <- "healthy"
+table1$condition[which(substr(table1$`Sample ID`, 1, 1) == "L")] <- "cirrhotic"
+```
+
+
+
+```{r}
+proba <- table1[, c(2:4, 12)]
+#proba <- table1[, c(2:4, 6:7, 12)]
+proba$Gender[proba$Gender == "female"] <- 1
+proba$Gender[proba$Gender == "male"] <- 0
+proba$condition[proba$condition == "healthy"] <- 1
+proba$condition[proba$condition == "cirrhotic"] <- 0
+#proba$`HBV related  (Y or N)`[proba$`HBV related  (Y or N)` == "Y"] <- 1
+#proba$`HBV related  (Y or N)`[proba$`HBV related  (Y or N)` == "N"] <- 0
+#proba$`Alcohol related (Y or N)`[proba$`Alcohol related (Y or N)` == "Y"] <- 1
+#proba$`Alcohol related (Y or N)`[proba$`Alcohol related (Y or N)` == "N"] <- 0
+
+#proba <- data.frame(condition = as.numeric(proba$condition), gender = as.numeric(proba$Gender), age = as.numeric(proba$Age), BMI = as.numeric(proba$`BMI (kg/m2)`), HBV_related = as.numeric(proba$`HBV related  (Y or N)`), alcohol_related = as.numeric(proba$`Alcohol related (Y or N)`))
+
+proba <- data.frame(condition = as.numeric(proba$condition), gender = as.numeric(proba$Gender), age = as.numeric(proba$Age), BMI = as.numeric(proba$`BMI (kg/m2)`))
+
+
+cor(proba)
+```
 
 
 
@@ -246,6 +272,140 @@ Ucitaj to bolje
 
 
 
+
+```{r}
+library(readxl)
+table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text", "guess", "guess"))
+table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
+table1 <- table1[, c(1, 3:9, 11:13)]
+
+table1$Gender[table1$Gender == "female"] <- 1
+table1$Gender[table1$Gender == "male"] <- 0
+table1$`HBV related  (Y or N)`[table1$`HBV related  (Y or N)` == "Y"] <- 1
+table1$`HBV related  (Y or N)`[table1$`HBV related  (Y or N)` == "N"] <- 0
+table1$`Alcohol related (Y or N)`[table1$`Alcohol related (Y or N)` == "Y"] <- 1
+table1$`Alcohol related (Y or N)`[table1$`Alcohol related (Y or N)` == "N"] <- 0
+```
+
+```{r}
+distances <- dist(t(assay(rlmean)))
+```
+
+```{r}
+sampleDistMatrix <- as.matrix(distances)
+rownames(sampleDistMatrix) <- unique(samples)
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = distances,
+         clustering_distance_cols = distances,
+         col = colors, 
+         cellheight = 6,
+         fontsize = 5)
+```
+
+```{r}
+sampleDistMatrix2 <- cbind(sampleDistMatrix, as.numeric(table1$Gender), as.numeric(table1$Age), as.numeric(table1$`HBV related  (Y or N)`), as.numeric(table1$`Alcohol related (Y or N)`), as.numeric(table1$`BMI (kg/m2)`))
+
+age <- apply(sampleDistMatrix2, 2, function(x){mean(x)/max(abs(x))})
+BMI <- apply(sampleDistMatrix2, 2, function(x){mean(x)/max(abs(x))})
+
+sampleDistMatrix2 <- cbind(sampleDistMatrix, gender = as.numeric(table1$Gender), age, HBV = as.numeric(table1$`HBV related  (Y or N)`), alcohol = as.numeric(table1$`Alcohol related (Y or N)`), BMI)
+
+pheatmap(sampleDistMatrix2, 
+         cellheight = 6,
+         fontsize = 5)
+```
+
+
+
+
+
+
+
+
+
+
+
+PCA plots:
+```{r}
+library(readxl)
+table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text", "guess", "guess"))
+table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
+table1 <- table1[, c(1, 3:8, 11:13)]
+```
+
+```{r}
+rlog_values <- t(rlog(counts(dataset)))
+colnames(rlog_values) <- dt$genes
+PCA <- prcomp(rlog_values, scale. = TRUE)
+```
+
+```{r}
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$Gender)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`HBV related  (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`Alcohol related (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+```
+
+```{r}
+BMIs <- cut(table1$`BMI (kg/m2)`, quantile(table1$`BMI (kg/m2)`))
+ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = BMIs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+```
+
+
+```{r}
+TBs <- factor(round(log(table1$`TB (umol/L)`)*2))
+ggbiplot(PCA, choices = c(2,3), ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() 
+```
+
+
+
+
+
+
+Klasteriranje podataka:
+```{r}
+tablica <- copy(table1)
+tablica$Gender[tablica$Gender == "female"] <- 1
+tablica$Gender[tablica$Gender == "male"] <- 0
+tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "Y"] <- 1
+tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "N"] <- 0
+tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "Y"] <- 1
+tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "N"] <- 0
+tablica$`Cirrhotic(Y or N)`[tablica$`Cirrhotic(Y or N)` == "Y"] <- 1
+tablica$`Cirrhotic(Y or N)`[tablica$`Cirrhotic(Y or N)` == "N"] <- 0
+```
+
+
+
+```{r}
+pairs(apply(as.matrix(tablica[, 2:10]), 2, as.numeric), col = as.numeric(coldata$condition) + 1)
+```
+
+
+```{r}
+library("R.utils")
+clusters <- kmeans(tablica[, 2:10], 2)
+
+clusters <- kmeans(tablica[-58, 2:10], 2)
+clusters <- insert(clusters$cluster, 58, 3)
+```
+
+```{r}
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(clusters)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+```
+
+
+
+```{r}
+#colnames(rlog_values) <- dt$genes
+PCA <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+
+
+
+```
 
 
 
