@@ -3,7 +3,7 @@ title: "DESeq"
 output: html_document
 ---
 
-```{}
+```{r}
 library("DESeq2")
 library("Biostrings")
 library("Biobase")
@@ -41,7 +41,7 @@ melp <- MELP(codonsInSamples2, ribosomal = TRUE)
 
 
 Density plot za 10 ^ meadian(MELP):
-```{r}
+```{}
 dt <- data.table(sample = samples, genes = getKO(codonsInSamples2), MELP = as.numeric(melp))
 dt[, MELP := median(MELP), by = c("sample", "genes")]
 ggplot(dt, aes(10^MELP)) + geom_density() + coord_cartesian(xlim = c(0,20))
@@ -137,6 +137,7 @@ analysis <- DESeq(dataset)
 res <- results(analysis)
 summary(res)
 ```
+
 
 
 Metabolic Module Identification
@@ -244,8 +245,6 @@ table1$condition <- "healthy"
 table1$condition[which(substr(table1$`Sample ID`, 1, 1) == "L")] <- "cirrhotic"
 ```
 
-
-
 ```{r}
 proba <- table1[, c(2:4, 12)]
 #proba <- table1[, c(2:4, 6:7, 12)]
@@ -270,67 +269,10 @@ cor(proba)
 
 
 
-
-
-
-```{r}
-library(readxl)
-table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text", "guess", "guess"))
-table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
-table1 <- table1[, c(1, 3:9, 11:13)]
-
-table1$Gender[table1$Gender == "female"] <- 1
-table1$Gender[table1$Gender == "male"] <- 0
-table1$`HBV related  (Y or N)`[table1$`HBV related  (Y or N)` == "Y"] <- 1
-table1$`HBV related  (Y or N)`[table1$`HBV related  (Y or N)` == "N"] <- 0
-table1$`Alcohol related (Y or N)`[table1$`Alcohol related (Y or N)` == "Y"] <- 1
-table1$`Alcohol related (Y or N)`[table1$`Alcohol related (Y or N)` == "N"] <- 0
-```
-
-```{r}
-distances <- dist(t(assay(rlmean)))
-```
-
-```{r}
-sampleDistMatrix <- as.matrix(distances)
-rownames(sampleDistMatrix) <- unique(samples)
-colnames(sampleDistMatrix) <- NULL
-colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
-pheatmap(sampleDistMatrix,
-         clustering_distance_rows = distances,
-         clustering_distance_cols = distances,
-         col = colors, 
-         cellheight = 6,
-         fontsize = 5)
-```
-
-```{r}
-sampleDistMatrix2 <- cbind(sampleDistMatrix, as.numeric(table1$Gender), as.numeric(table1$Age), as.numeric(table1$`HBV related  (Y or N)`), as.numeric(table1$`Alcohol related (Y or N)`), as.numeric(table1$`BMI (kg/m2)`))
-
-age <- apply(sampleDistMatrix2, 2, function(x){mean(x)/max(abs(x))})
-BMI <- apply(sampleDistMatrix2, 2, function(x){mean(x)/max(abs(x))})
-
-sampleDistMatrix2 <- cbind(sampleDistMatrix, gender = as.numeric(table1$Gender), age, HBV = as.numeric(table1$`HBV related  (Y or N)`), alcohol = as.numeric(table1$`Alcohol related (Y or N)`), BMI)
-
-pheatmap(sampleDistMatrix2, 
-         cellheight = 6,
-         fontsize = 5)
-```
-
-
-
-
-
-
-
-
-
-
-
 PCA plots:
 ```{r}
 library(readxl)
-table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text", "guess", "guess"))
+table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
 table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
 table1 <- table1[, c(1, 3:8, 11:13)]
 ```
@@ -364,6 +306,7 @@ ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic()
 
 
 
+
 Klasteriranje podataka:
 ```{r}
 tablica <- copy(table1)
@@ -377,35 +320,170 @@ tablica$`Cirrhotic(Y or N)`[tablica$`Cirrhotic(Y or N)` == "Y"] <- 1
 tablica$`Cirrhotic(Y or N)`[tablica$`Cirrhotic(Y or N)` == "N"] <- 0
 ```
 
-
-
 ```{r}
 pairs(apply(as.matrix(tablica[, 2:10]), 2, as.numeric), col = as.numeric(coldata$condition) + 1)
 ```
 
 
-```{r}
-library("R.utils")
-clusters <- kmeans(tablica[, 2:10], 2)
 
-clusters <- kmeans(tablica[-58, 2:10], 2)
-clusters <- insert(clusters$cluster, 58, 3)
+
+
+S albuminom i bilirubinom:
+```{r}
+PCA1 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA1, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+PCA1$rotation
+```
+
+
+Bez njih:
+```{r}
+PCA2 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:8)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+```
+
+Bez bilirubina:
+```{r}
+PCA3 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:9)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA3, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+```
+
+Bez albumina:
+```{r}
+PCA4 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:8, 10)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA4, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+```
+
+
+
+
+
+
+
+
+Funkcije koje klasteriraju i slazu tablice s missclassification rates vrijednostima po klasteru:
+
+Ovo slozi s data table umjesto for petljom:
+```{r}
+clustering <- function(N){
+  kclustering <- kmeans(distances, N)
+  classy <- data.table(condition = substr(names(kclustering$cluster), 1, 1), cluster = kclustering$cluster)
+  missclass <- data.table()
+  for (i in 1:ncol(table(classy))){
+    mc_rate <- min(table(classy)[, i]) / sum(table(classy)[, i])
+    missclass <- rbind(missclass, data.table(cluster = i, mc_rate))
+  }
+  missclass$mc_rate
+}
+
+
+mc_table <- function(N){
+  missclass <- data.table(cluster = 1:N, 
+                          mc_rate = apply(replicate(1000, clustering(N)), 1, sum) / 1000,
+                          st_dev = apply(replicate(1000, clustering(N)), 1, sd))
+  return(missclass)
+}
+
+#for (i in 2:10){
+#  print(mc_table(i))
+#}
+```
+
+
+
+
+#### pretvori u dt
+
+```{r}
+#daj prokuzi ovo
+kclustering <- kmeans(distances, 7)
+classy <- data.table(condition = substr(names(kclustering$cluster), 1, 1), cluster = kclustering$cluster)
+missclass <- data.table(cluster = 1:7)
+missclass[ , mc_rate := min(.SD) / sum(.SD), by = .I, .SD = table(classy)[, .I]]
+missclass[ , mc_rate := min(.SD) / sum(.SD), by = cluster, .SD = table(classy)[, cluster]]
+```
+
+####
+
+
+
+
+Funkcije koje odreðuju konsenzus klastere za 1000 klasteriranja:
+-ovo bi trebalo biti jedno s onih gornjih 1000 replikacija
+```{r}
+klasteri <- function(N){
+  kclustering <- kmeans(distances, N)
+  sample_clusters <- kclustering$cluster
+}
+
+consensus_clst <- function(N){
+  clusters <- matrix(replicate(1000, klasteri(N)), ncol = 1000)
+  clusters <- data.table(cbind(sample = tablica$`Sample ID`, clusters))
+  clusters[, final_cluster := which.max(table(as.matrix(.SD))), .SDcols = V2:V1001, by = sample]
+  return(clusters$final_cluster)
+}
+```
+
+
+Promijeniti broj u mc_table i consensus_clst u zeljeni broj klastera:
+```{r}
+set.seed(753)
+missclass <- mc_table(3)[, 1:2]
+
+#mc_rate ovisnosti nece imati ucinka kada su sve gotovo iste
+regresije <- copy(tablica[, c(1, 5, 6, 7, 9, 10)])
+colnames(regresije) <- c("sample", "condition", "HBV", "alcohol", "albumin", "bilirubin")
+regresije$cluster <- consensus_clst(3)
+
+regresije <- merge(regresije, missclass)
+regresije$cluster
 ```
 
 ```{r}
-ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(clusters)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+summary(lm(cluster ~ albumin + bilirubin, regresije))
+summary(lm(cluster ~ albumin, regresije))
+summary(lm(cluster ~ bilirubin, regresije))
+
+summary(lm(cluster ~ condition, regresije))
+summary(lm(condition ~ cluster, regresije))
+
+#summary(lm(mc_rate ~ albumin + bilirubin, regresije))
+#summary(lm(mc_rate ~ albumin, regresije))
+
+#summary(lm(mc_rate ~ bilirubin, regresije))
+
+#ovisnost klastera o tome je li uzrokovano HBV-om ili ne:
+summary(lm(cluster ~ alcohol + HBV, regresije))
+summary(lm(cluster ~ HBV, regresije))
+
+#summary(lm(mc_rate ~ alcohol + HBV, regresije))
+#summary(lm(mc_rate ~ HBV, regresije))
 ```
 
 
 
+Poveznica direktno izmedu codon usage-a i metadata
 ```{r}
-#colnames(rlog_values) <- dt$genes
-PCA <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+head(codonsInSamples2)
+codon_usage <- data.table(condition = substr(getID(codonsInSamples2), 1, 1),
+                          codonCounts(codonsInSamples2))
+codon_usage$condition[codon_usage$condition == "H"] <- 1
+codon_usage$condition[codon_usage$condition == "L"] <- 0
 
+summary(lm(condition ~ ., codon_usage))
 
+PCA <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:8)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
 
+PCA <- prcomp(apply(as.matrix(codon_usage), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(codon_usage$condition, 1, 1))) + theme_classic()
 ```
+
+
+
+
+
+
 
 
 
