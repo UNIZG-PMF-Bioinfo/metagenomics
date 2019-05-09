@@ -236,7 +236,7 @@ table1 <- table1[, c(1, 3:9, 11:13)]
 
 
 Korelacije:
-```{r}
+```{r warning=FALSE}
 library(readxl)
 table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\rad\\Supplementary information\\nature13568-s1\\Table 1.xlsx", col_types = c("text", "text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
 table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
@@ -270,7 +270,7 @@ cor(proba)
 
 
 PCA plots:
-```{r}
+```{r warning=FALSE}
 library(readxl)
 table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
 table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
@@ -360,214 +360,61 @@ ggbiplot(PCA4, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames
 
 
 
-
-Funkcije koje klasteriraju i slazu tablice s missclassification rates vrijednostima po klasteru:
-
-Ovo slozi s data table:
--verzija s dplyr pipeline-om:
+A function which does kmeans clustering for 1000 times, calculates average missclassification rates and standard deviation for each cluster and calculates (incorrectly) a consensus cluster for each sample:
 ```{r}
-clustering <- function(N){
-  kclustering <- kmeans(distances, N)
-  classy <- data.table(condition = substr(names(kclustering$cluster), 1, 1), cluster = kclustering$cluster)
-  
-  minimum <- 
-  data.table(matrix(table(classy), ncol = N)) %>% 
-  mutate_all(., min) %>% 
-  slice(., 1)
-
-  suma <- 
-    data.table(matrix(table(classy), ncol = N)) %>% 
-    mutate_all(., sum) %>% 
-    slice(., 1)
-  
-  mc_rate <- minimum/suma
-  
-  missclass <- data.table(cluster = 1:N, mc_rate = t(mc_rate))
-  missclass$mc_rate
-}
-
-
-mc_table <- function(N){
-  missclass <- data.table(cluster = 1:N, 
-                          mc_rate = apply(replicate(1000, clustering(N)), 1, sum) / 1000,
-                          st_dev = apply(replicate(1000, clustering(N)), 1, sd))
-  return(missclass)
-}
-
-mc_table(7)
-```
-
-
--verzija s for petljom:
-```{r}
-clustering <- function(N){
-  kclustering <- kmeans(distances, N)
-  classy <- data.table(condition = substr(names(kclustering$cluster), 1, 1), cluster = kclustering$cluster)
-  missclass <- data.table()
-  for (i in 1:ncol(table(classy))){
-    mc_rate <- min(table(classy)[, i]) / sum(table(classy)[, i])
-    missclass <- rbind(missclass, data.table(cluster = i, mc_rate))
+funfunfun <- function(N){
+  missclassification <- function(cl){
+   cl <- unlist(cl)
+   names(cl) <- substr(names(unlist(clustering[1])), 1, 1)
+   classy <- data.table(condition = names(cl), cluster = cl)
+   
+   minimum <- 
+     data.table(matrix(table(classy), ncol = N)) %>% 
+     mutate_all(., min) %>% 
+     slice(., 1)
+   suma <- 
+     data.table(matrix(table(classy), ncol = N)) %>% 
+     mutate_all(., sum) %>% 
+     slice(., 1)
+   
+   mc_rate <- minimum/suma
+   return(mc_rate)
   }
-  missclass$mc_rate
-}
 
-
-mc_table <- function(N){
-  missclass <- data.table(cluster = 1:N, 
-                          mc_rate = apply(replicate(1000, clustering(N)), 1, sum) / 1000,
-                          st_dev = apply(replicate(1000, clustering(N)), 1, sd))
-  return(missclass)
-}
-
-#for (i in 2:10){
-#  print(mc_table(i))
-#}
-
-mc_table(7)
-```
-
-
-
-
-#### pretvori u dt
-
-```{r}
-#daj prokuzi ovo
-kclustering <- kmeans(distances, 3)
-classy <- data.table(condition = substr(names(kclustering$cluster), 1, 1), cluster = kclustering$cluster)
-missclass <- data.table(cluster = 1:3)
-
-missclass[ , mc_rate := min()]
-
-missclass[ , mc_rate := min(.SD) / sum(.SD), by = .I, .SD = table(classy)[, .I]]
-missclass[ , mc_rate := min(.SD) / sum(.SD), by = cluster, .SD = table(classy)[, cluster]]
-```
-
-####
-
-
-
-
-
-Funkcije koje odreðuju konsenzus klastere za 1000 klasteriranja:
--ovo bi trebalo biti jedno s onih gornjih 1000 replikacija
-```{r}
-klasteri <- function(N){
-  kclustering <- kmeans(distances, N)
-  sample_clusters <- kclustering$cluster
-}
-
-consensus_clst <- function(N){
-  clusters <- matrix(replicate(1000, klasteri(N)), ncol = 1000)
-  clusters <- data.table(cbind(sample = tablica$`Sample ID`, clusters))
-  clusters[, final_cluster := which.max(table(as.matrix(.SD))), .SDcols = V2:V1001, by = sample]
-  return(clusters$final_cluster)
-}
-```
-
-
-
-
-
-```{r}
-klasteri <- function(N){
-  kclustering <- kmeans(distances, N)
-  sample_clusters <- kclustering$cluster
-}
-
-consensus_clst <- function(N){
-  clusters <- matrix(replicate(1000, klasteri(N)), ncol = 1000)
-  clusters <- data.table(cbind(sample = tablica$`Sample ID`, clusters))
-  clusters[, final_cluster := which.max(table(as.matrix(.SD))), .SDcols = V2:V1001, by = sample] #samo trebas funkciju s ovom linijom
-  return(clusters$final_cluster)
-}
-```
-
-```{r}
-clustering <- function(N){
-  kclustering <- kmeans(distances, N)
-  classy <- data.table(condition = substr(names(kclustering$cluster), 1, 1), cluster = kclustering$cluster)
+  clustering <- replicate(1000, kmeans(distances, N))
   
-  minimum <- 
-  data.table(matrix(table(classy), ncol = N)) %>% 
-  mutate_all(., min) %>% 
-  slice(., 1)
-
-  suma <- 
-    data.table(matrix(table(classy), ncol = N)) %>% 
-    mutate_all(., sum) %>% 
-    slice(., 1)
+  #dio koji odreduje konsenzus klaster:
+  clusters <- matrix(unlist(clustering[1, ]), ncol = 1000) #svaki red je jedan uzorak
+  consensus_clst <- data.table(cbind(sample = tablica$`Sample ID`, clusters))
+  consensus_clst[, cluster := which.max(table(as.matrix(.SD))), .SDcols = V2:V1001, by = sample]
   
-  mc_rate <- minimum/suma
+  #dio koji racuna mc_rate i st_dev:
+    #applyam na svaki red missclassification funkciju i to stavim kao mc_rates kolonu i onda toj koloni jos izracunam srednju vrijednost
+  all_clusters <- data.table(clustering[1, ])
+  all_clusters[, mc_rates := lapply(V1, missclassification)]
+  mc_rates <- data.table(matrix(unlist(all_clusters$mc_rates), ncol = N, byrow = T))
+  missclass <- data.table(cluster = 1:N, mc_rates = unlist(unique(mutate_all(mc_rates, mean))), st_dev = unlist(unique(mutate_all(mc_rates, sd))))
   
-  missclass <- data.table(cluster = 1:N, mc_rate = t(mc_rate))
-  #return(missclas)
-  data.table(mc_rate = list(missclass), cluster = list(kclustering$cluster))
-  #return(data.table(missclass, kclustering$cluster))
+  final_dt <- merge(consensus_clst, missclass, by = "cluster")[, c(1, 2, 1003, 1004)]
+  return(final_dt)
 }
-
-
-
-
-#ponocno napraci da vraca dt s missclass i dt s konsenzus klasterima:
-#opet ce biti isto kada ce se zasebno pozivati 3 clustering funkcije
-mc_table <- function(N){
-  missclass <- data.table(cluster = 1:N, 
-                          mc_rate = apply(replicate(1000, unlist(clustering(N)$mc_rate[[1]][, 2])), 1, sum) / 1000,
-                          st_dev = apply(replicate(1000, unlist(clustering(N)$mc_rate[[1]][, 2])), 1, sd))
-  consensus <- unique(apply(replicate(1000, unlist(clustering(N)$cluster)), 1, consensus_clst))
-  return(data.table(missclass = list(missclass), consensus = list(consensus)))
-}
-
-print(clustering(3))
-nj <- mc_table(3)
-nj$consensus
-
-
-consensus_clst <- function(N){
-  clusters <- matrix(replicate(1000, klasteri(N)), ncol = 1000)
-  clusters <- data.table(cbind(sample = tablica$`Sample ID`, clusters))
-  clusters[, final_cluster := which.max(table(as.matrix(.SD))), .SDcols = V2:V1001, by = sample] #samo trebas funkciju s ovom linijom
-  return(clusters$final_cluster)
-}
-
-
-
-
-#znaci poslozi ovo sve u matricu s replicate i onda od tog tek racunaj konsenzus klaster
-consensus_clst <- function(clusters){
-  consensus <- data.table(clusters)
-  consensus[, final_cluster := which.max(table(as.matrix(.SD))), by = 1:nrow(consensus)] #samo trebas funkciju s ovom linijom
-  return(consensus$final_cluster)
-}
-
-consensus_clst(unlist(clustering(3)$cluster))
-which.max(table(as.matrix(unlist(nj$cluster))))
-
-
-
 ```
 
 
-
-
-
-
-
-
-
-Promijeniti broj u mc_table i consensus_clst u zeljeni broj klastera:
+The argument for the funfunfun function is the wanted number of clusters:
 ```{r}
 set.seed(753)
-missclass <- mc_table(3)[, 1:2]
+sample_dt <- funfunfun(5)
 
 #mc_rate ovisnosti nece imati ucinka kada su sve gotovo iste
 regresije <- copy(tablica[, c(1, 5, 6, 7, 9, 10)])
 colnames(regresije) <- c("sample", "condition", "HBV", "alcohol", "albumin", "bilirubin")
-regresije$cluster <- consensus_clst(3)
 
-regresije <- merge(regresije, missclass)
-regresije$cluster
+regresije <- merge(regresije, sample_dt, by = "sample")
+#regresije$cluster
+#unique(regresije$cluster)
+
+unique(sample_dt[, c(1, 3:4)])
 ```
 
 ```{r}
@@ -590,6 +437,16 @@ summary(lm(cluster ~ HBV, regresije))
 #summary(lm(mc_rate ~ alcohol + HBV, regresije))
 #summary(lm(mc_rate ~ HBV, regresije))
 ```
+
+
+```{r}
+regresije[, c("sample", "cluster")]
+```
+
+
+
+
+
 
 
 
