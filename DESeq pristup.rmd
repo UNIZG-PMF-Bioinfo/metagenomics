@@ -19,6 +19,7 @@ library("RColorBrewer")
 library("ggbiplot")
 library("pathview")
 library("gage")
+library("ConsensusClusterPlus")
 ```
 
 ```{r}
@@ -443,6 +444,66 @@ summary(lm(cluster ~ HBV, regresije))
 regresije[, c("sample", "cluster")]
 ```
 
+
+
+
+
+
+
+
+```{r}
+funfunfun <- function(N){
+  missclassification <- function(cl){
+   cl <- unlist(cl)
+   names(cl) <- substr(names(unlist(clustering[1])), 1, 1)
+   classy <- data.table(condition = names(cl), cluster = cl)
+   
+   minimum <- 
+     data.table(matrix(table(classy), ncol = N)) %>% 
+     mutate_all(., min) %>% 
+     slice(., 1)
+   suma <- 
+     data.table(matrix(table(classy), ncol = N)) %>% 
+     mutate_all(., sum) %>% 
+     slice(., 1)
+   
+   mc_rate <- minimum/suma
+   return(mc_rate)
+  }
+
+  clustering <- replicate(1000, kmeans(distances, N))
+  
+  #dio koji odreduje konsenzus klaster:
+  clusters <- matrix(unlist(clustering[1, ]), ncol = 1000) #svaki red je jedan uzorak
+  consensus_clst <- data.table(cbind(sample = tablica$`Sample ID`, clusters))
+  consensus_clst[, cluster := which.max(table(as.matrix(.SD))), .SDcols = V2:V1001, by = sample]
+  
+  #dio koji racuna mc_rate i st_dev:
+    #applyam na svaki red missclassification funkciju i to stavim kao mc_rates kolonu i onda toj koloni jos izracunam srednju vrijednost
+  all_clusters <- data.table(clustering[1, ])
+  all_clusters[, mc_rates := lapply(V1, missclassification)]
+  mc_rates <- data.table(matrix(unlist(all_clusters$mc_rates), ncol = N, byrow = T))
+  missclass <- data.table(cluster = 1:N, mc_rates = unlist(unique(mutate_all(mc_rates, mean))), st_dev = unlist(unique(mutate_all(mc_rates, sd))))
+  
+  final_dt <- merge(consensus_clst, missclass, by = "cluster")[, c(1, 2, 1003, 1004)]
+  return(final_dt)
+}
+```
+
+
+
+```{r}
+#cl_count <- data.frame(matrix(rep(0, 60*60), ncol = 60))
+#colnames(cl_count) <- tablica$`Sample ID`
+#rownames(cl_count) <- tablica$`Sample ID`
+
+
+#ovo bi trebalo dati konsenzus matricu, sad jos prokuzi kako ih na temelju toga podijeliti u klastere
+proba <- ConsensusClusterPlus(distances, maxK = 10, reps = 1000, pFeature = 1, pItem = 0.8, distance = "euclidean", clusterAlg = "km")
+proba[[2]][["consensusMatrix"]]
+proba[[3]][["consensusMatrix"]]
+
+```
 
 
 
