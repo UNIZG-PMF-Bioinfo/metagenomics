@@ -20,8 +20,7 @@ library("ggbiplot")
 library("pathview")
 library("gage")
 library("ConsensusClusterPlus")
-#library("KEGGREST")
-library("biomaRt")
+library("KEGGREST")
 ```
 
 ```{r}
@@ -141,7 +140,7 @@ DESeq:
 analysis <- DESeq(dataset)
 res <- results(analysis)
 summary(res)
-res[res$padj < 0.1 & !is.na(res$padj),]
+#res[res$padj < 0.1 & !is.na(res$padj),]
 #res[abs(res$log2FoldChange)> 2 & !is.na(res$log2FoldChange) & res$pvalue < 0.05,] %>% as.data.frame() %>% arrange(log2FoldChange)
 ```
 
@@ -154,36 +153,6 @@ KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
 
 KOs_nofiltering <- copy(KOs)
 ```
-
-
-
-##### beskorisno:
-
-The getBM() function is the main query function in biomaRt. It has four main arguments:
-
-attributes: is a vector of attributes that one wants to retrieve (= the output of the query).
-filters: is a vector of filters that one wil use as input to the query.
-values: a vector of values for the filters. In case multple filters are in use, the values argument requires a list of values where each position in the list corresponds to the position of the filters in the filters argument (see examples below).
-mart: is an object of class Mart, which is created by the useMart() function.
-```{r}
-KOs <- rownames(res[res$padj < 0.1 & !is.na(res$padj),])[1:5]
-
-ensembl <- useMart("ensembl")
-ensembl <-  useDataset("hsapiens_gene_ensembl", mart = ensembl)
-
-proba <- getBM(attributes = "pdb",
-               filters = "uniprot_gn",
-               values = KOs$protein[1],
-               mart = ensembl)
-
-listFilters(ensembl)
-```
-
-```{r}
-listFilters(ensembl)
-```
-
-#####
 
 
 
@@ -224,32 +193,31 @@ coldata2 <- data.frame(sample = colnames(dt_filtered))
 coldata2$condition <- "healthy"
 coldata2$condition[which(substr(coldata2$sample, 1, 1) == "L")] <- "cirrhotic"
 coldata2$condition <- factor(coldata2$condition, levels = c("healthy", "cirrhotic"))
-dataset <- DESeqDataSetFromMatrix(countData = dt_filtered, colData = coldata2, design = ~ condition)
-#head(assay(dataset))
+dataset2 <- DESeqDataSetFromMatrix(countData = dt_filtered, colData = coldata2, design = ~ condition)
 ```
 
 ```{r}
 #pre-fitlering
-dataset <- dataset[rowSums(counts(dataset) > 0) > 2, ]
+dataset2 <- dataset2[rowSums(counts(dataset2) > 0) > 2, ]
 ```
 
 Transformation
 ```{r}
-rlmean <- rlog(dataset, fitType = "mean")
+rlmean2 <- rlog(dataset2, fitType = "mean")
 ```
 
 ```{r}
-distances <- dist(t(assay(rlmean)))
+distances2 <- dist(t(assay(rlmean2)))
 ```
 
 ```{r}
-sampleDistMatrix <- as.matrix(distances)
+sampleDistMatrix <- as.matrix(distances2)
 rownames(sampleDistMatrix) <- colnames(dt_filtered)
 colnames(sampleDistMatrix) <- NULL
 colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
 pheatmap(sampleDistMatrix,
-         clustering_distance_rows = distances,
-         clustering_distance_cols = distances,
+         clustering_distance_rows = distances2,
+         clustering_distance_cols = distances2,
          col = colors, 
          cellheight = 6,
          fontsize = 5)
@@ -257,33 +225,30 @@ pheatmap(sampleDistMatrix,
 
 PCA plot:
 ```{r}
-rlog_values <- t(rlog(counts(dataset)))
-colnames(rlog_values) <- dt$genes
-PCA <- prcomp(rlog_values, scale. = TRUE)
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1)), labels = row.names(PCA$x)) + theme_classic()
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+rlog_values2 <- t(rlog(counts(dataset2)))
+colnames(rlog_values2) <- dt$genes
+PCA2 <- prcomp(rlog_values2, scale. = TRUE)
+ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values2), 1, 1)), labels = row.names(PCA2$x)) + theme_classic()
 
-PCA_1st_filtering <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+PCA_1st_filtering <- ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values2), 1, 1))) + theme_classic()
+PCA_1st_filtering
 ```
 
 DESeq:
 ```{r}
-analysis <- DESeq(dataset)
-res <- results(analysis)
-summary(res)
-
-res[res$padj < 0.1 & !is.na(res$padj),]
-#res[abs(res$log2FoldChange)> 2 & !is.na(res$log2FoldChange) & res$pvalue < 0.05,] %>% as.data.frame() %>% arrange(log2FoldChange)
+analysis2 <- DESeq(dataset2)
+res2 <- results(analysis2)
+summary(res2)
 ```
 
 
 Anotiranje:
 ```{r}
-KOs <- data.table(KO = rownames(res[res$padj < 0.1 & !is.na(res$padj),]))
-KOs[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs)]
-KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
+KOs2 <- data.table(KO = rownames(res2[res2$padj < 0.1 & !is.na(res2$padj),]))
+KOs2[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs2)]
+KOs2[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs2)]
 
-KOs_1st_filtering <- copy(KOs)
+KOs_1st_filtering <- copy(KOs2)
 ```
 
 
@@ -301,31 +266,31 @@ coldata3 <- data.frame(sample = colnames(dt_filtered2))
 coldata3$condition <- "healthy"
 coldata3$condition[which(substr(coldata3$sample, 1, 1) == "L")] <- "cirrhotic"
 coldata3$condition <- factor(coldata3$condition, levels = c("healthy", "cirrhotic"))
-dataset <- DESeqDataSetFromMatrix(countData = dt_filtered2, colData = coldata3, design = ~ condition)
+dataset3 <- DESeqDataSetFromMatrix(countData = dt_filtered2, colData = coldata3, design = ~ condition)
 ```
 
 ```{r}
 #pre-fitlering
-dataset <- dataset[rowSums(counts(dataset) > 0) > 2, ]
+dataset3 <- dataset3[rowSums(counts(dataset3) > 0) > 2, ]
 ```
 
 Transformation
 ```{r}
-rlmean <- rlog(dataset, fitType = "mean")
+rlmean3 <- rlog(dataset3, fitType = "mean")
 ```
 
 ```{r}
-distances <- dist(t(assay(rlmean)))
+distances3 <- dist(t(assay(rlmean3)))
 ```
 
 ```{r}
-sampleDistMatrix <- as.matrix(distances)
+sampleDistMatrix <- as.matrix(distances3)
 rownames(sampleDistMatrix) <- colnames(dt_filtered2)
 colnames(sampleDistMatrix) <- NULL
 colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
 pheatmap(sampleDistMatrix,
-         clustering_distance_rows = distances,
-         clustering_distance_cols = distances,
+         clustering_distance_rows = distances3,
+         clustering_distance_cols = distances3,
          col = colors, 
          cellheight = 6,
          fontsize = 5)
@@ -333,36 +298,33 @@ pheatmap(sampleDistMatrix,
 
 PCA plot:
 ```{r}
-rlog_values <- t(rlog(counts(dataset)))
-colnames(rlog_values) <- dt$genes
-PCA <- prcomp(rlog_values, scale. = TRUE)
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1)), labels = row.names(PCA$x)) + theme_classic()
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+rlog_values3 <- t(rlog(counts(dataset3)))
+colnames(rlog_values3) <- dt$genes
+PCA3 <- prcomp(rlog_values3, scale. = TRUE)
+ggbiplot(PCA3, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values3), 1, 1)), labels = row.names(PCA3$x)) + theme_classic()
 
-PCA_2nd_filtering <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+PCA_2nd_filtering <- ggbiplot(PCA3, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values3), 1, 1))) + theme_classic()
+PCA_2nd_filtering
 ```
 
 DESeq:
 ```{r}
-analysis <- DESeq(dataset)
-res <- results(analysis)
-summary(res)
-
-res[res$padj < 0.1 & !is.na(res$padj),]
-#res[abs(res$log2FoldChange)> 3 & !is.na(res$log2FoldChange) & res$padj < 0.05,] %>% as.data.frame() %>% arrange(log2FoldChange)
+analysis3 <- DESeq(dataset3)
+res3 <- results(analysis3)
+summary(res3)
 ```
 
 
 Anotiranje:
 ```{r}
-KOs <- data.table(KO = rownames(res[res$padj < 0.1 & !is.na(res$padj),]))
-KOs <- KOs[-c(74, 162)] #izbaceni su K03081 i K08345 jer ih nema u KEGG dt
-KOs[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs)]
-KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
+KOs3 <- data.table(KO = rownames(res3[res3$padj < 0.1 & !is.na(res3$padj),]))
+#KOs3 <- KOs3[-c(which((KOs3$KO == c("K03081", "K08345")), arr.ind = T))]
+KOs3 <- KOs3[-c(74, 162)]
+KOs3[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs3)]
+KOs3[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs3)]
 
 KOs_2nd_filtering <- copy(KOs)
 ```
-
 
 
 ```{}
