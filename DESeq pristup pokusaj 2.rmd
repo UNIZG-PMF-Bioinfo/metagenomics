@@ -1,0 +1,899 @@
+---
+title: "DESeq"
+output: html_document
+---
+
+```{r}
+library("DESeq2")
+library("Biostrings")
+library("Biobase")
+library("dplyr")
+library("plyr")
+library("stringr")
+library("coRdon")
+library("data.table")
+library("ggplot2")
+library("dplyr")
+library("pheatmap")
+library("RColorBrewer")
+library("ggbiplot")
+library("pathview")
+library("gage")
+library("ConsensusClusterPlus")
+library("KEGGREST")
+```
+
+```{r}
+my_fasta_file_folder <- "C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\60uzoraka"
+#my_fasta_file_folder <- "C:\\Users\\pavli\\Desktop\\FAKS\\DS\\4. semestar\\diplomski rad\\samples\\10uzoraka"
+codonsInSamples <- readSet(my_fasta_file_folder, prepend.filenames = T)
+codonsInSamples2 <- codonTable(codonsInSamples)
+#head(codonsInSamples2)
+```
+
+```{r}
+#samples <- str_extract(getID(codonsInSamples3), "[HL]D")
+samples <- str_extract(getID(codonsInSamples2), "[HL]D\\d+")
+#s2 <- substr(samples,1,1)
+```
+
+
+Ispravljeno:
+```{r}
+codonsInSamples2
+getID(codonsInSamples2)
+
+uzorci <- data.table(sample = samples, KO = getKO(codonsInSamples2), codonCounts(codonsInSamples2))
+```
+
+```{r}
+subset(codonsInSamples2, getKO(codonsInSamples2) == "K11751")
+nj <- subset(codonsInSamples2, substr(getID(codonsInSamples2), 1, 3) == "HD1")
+
+unique(samples)
+```
+
+```{r}
+tiny <- codonsInSamples2[1:50000]
+uzorci <- data.table(sample = str_extract(getID(tiny), "[HL]D\\d+"), KO = getKO(tiny), codonCounts(tiny))
+
+
+uzorci[, melp := MELP(tiny, subsets = sample), by = sample]
+uzorci[, melp := MELP(tiny, subsets = (list(selected = str_extract(getID(tiny), "[HL]D\\d+") == sample)), ribosomal = TRUE), by = sample]
+
+#E sad sredi ovaj dio da radi
+```
+
+
+
+```{r}
+melp <- MELP(codonsInSamples2, ribosomal = TRUE)
+```
+
+
+Density plot za 10 ^ meadian(MELP):
+```{}
+dt <- data.table(sample = samples, genes = getKO(codonsInSamples2), MELP = as.numeric(melp))
+dt[, MELP := median(MELP), by = c("sample", "genes")]
+ggplot(dt, aes(10^MELP)) + geom_density() + coord_cartesian(xlim = c(0,20))
+```
+
+
+Priprema podataka:
+```{r}
+dt <- data.table(sample = samples, genes = getKO(codonsInSamples2), MELP = as.numeric(melp))
+
+dtMelp <- copy(dt)
+
+dt[, MELP := round(10^median(MELP)), by = c("sample", "genes")]
+dt <- unique(dt)
+dt <- dcast(dt, genes ~ sample, value.var = "MELP")
+dt[is.na(dt)] <- 0
+dt <- as.data.frame(dt)
+rownames(dt) <- dt$genes
+dt <- dt[, 2:ncol(dt)]
+```
+
+
+DESeq:
+```{r}
+coldata <- data.frame(sample = unique(samples))
+coldata$condition <- "healthy"
+coldata$condition[which(substr(coldata$sample, 1, 1) == "L")] <- "cirrhotic"
+coldata$condition <- factor(coldata$condition, levels = c("healthy", "cirrhotic"))
+dataset <- DESeqDataSetFromMatrix(countData = dt, colData = coldata, design = ~ condition)
+#head(assay(dataset))
+```
+
+```{r}
+#pre-fitlering
+dataset <- dataset[ rowSums(counts(dataset) > 0) > 2, ]
+#nrow(dataset)
+```
+
+Transformation
+```{r}
+rlmean <- rlog(dataset, fitType = "mean")
+#vsd <- vst(dataset)
+#rld <- rlog(dataset)
+```
+
+```{}
+dds <- estimateSizeFactors(dataset)
+df <- bind_rows(
+  as_data_frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
+         mutate(transformation = "log2(x + 1)"),
+  as_data_frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"),
+  as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"),
+  as_data_frame(assay(rlmean)[, 1:2]) %>% mutate(transformation = "rlog_mean"))
+  
+colnames(df)[1:2] <- c("x", "y")  
+ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) + coord_fixed() + facet_grid( . ~ transformation)  
+```
+
+```{r}
+distances <- dist(t(assay(rlmean)))
+```
+
+```{r}
+sampleDistMatrix <- as.matrix(distances)
+rownames(sampleDistMatrix) <- unique(samples)
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = distances,
+         clustering_distance_cols = distances,
+         col = colors, 
+         cellheight = 6,
+         fontsize = 5)
+```
+
+PCA plot:
+```{}
+pcaData <- plotPCA(rlmean, intgroup = "sample", returnData = TRUE)
+plotPCA(rlmean, intgroup = "sample")
+```
+
+```{r}
+rlog_values <- t(rlog(counts(dataset)))
+colnames(rlog_values) <- dt$genes
+PCA <- prcomp(rlog_values, scale. = TRUE)
+ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1)), labels = row.names(PCA$x)) + theme_classic()
+ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+
+PCA_nofiltering <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+```
+
+DESeq:
+```{r}
+analysis <- DESeq(dataset)
+res <- results(analysis)
+summary(res)
+#res[res$padj < 0.1 & !is.na(res$padj),]
+#res[abs(res$log2FoldChange)> 2 & !is.na(res$log2FoldChange) & res$pvalue < 0.05,] %>% as.data.frame() %>% arrange(log2FoldChange)
+```
+
+
+Anotiranje:
+```{r}
+KOs <- data.table(KO = rownames(res[res$padj < 0.1 & !is.na(res$padj),]))
+KOs[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs)]
+KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
+
+KOs_nofiltering <- copy(KOs)
+```
+
+
+
+Metabolic Module Identification
+
+```{r}
+path.set <- kegg.gsets("ko")
+ko.gs <- path.set$kg.sets
+```
+
+Extraction of fold-change (M) values for the samples.
+```{r}
+sampleMVals <- as.data.frame(res$log2FoldChange)
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(data.frame(row.names=rownames(res)[res$pvalue < 0.1],res$log2FoldChange[res$pvalue < 0.1]), gsets = ko.gs, samp = NULL, compare = "unpaired", FDR.adj = F)
+kegg.sig <- sigGeneSet(pathwayEnrich)
+kegg.sig
+```
+
+
+
+
+
+
+
+
+Izbacivanje outlier-a:
+```{r}
+dt_filtered <- dt[, -c(which(colnames(dt) %in% c("HD64", "LD13", "LD96", "HD25", "LD31", "LD63", "HD78")))]
+```
+
+DESeq:
+```{r}
+coldata2 <- data.frame(sample = colnames(dt_filtered))
+coldata2$condition <- "healthy"
+coldata2$condition[which(substr(coldata2$sample, 1, 1) == "L")] <- "cirrhotic"
+coldata2$condition <- factor(coldata2$condition, levels = c("healthy", "cirrhotic"))
+dataset2 <- DESeqDataSetFromMatrix(countData = dt_filtered, colData = coldata2, design = ~ condition)
+```
+
+```{r}
+#pre-fitlering
+dataset2 <- dataset2[rowSums(counts(dataset2) > 0) > 2, ]
+```
+
+Transformation
+```{r}
+rlmean2 <- rlog(dataset2, fitType = "mean")
+```
+
+```{r}
+distances2 <- dist(t(assay(rlmean2)))
+```
+
+```{r}
+sampleDistMatrix <- as.matrix(distances2)
+rownames(sampleDistMatrix) <- colnames(dt_filtered)
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = distances2,
+         clustering_distance_cols = distances2,
+         col = colors, 
+         cellheight = 6,
+         fontsize = 5)
+```
+
+PCA plot:
+```{r}
+rlog_values2 <- t(rlog(counts(dataset2)))
+colnames(rlog_values2) <- dt$genes
+PCA2 <- prcomp(rlog_values2, scale. = TRUE)
+ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values2), 1, 1)), labels = row.names(PCA2$x)) + theme_classic()
+
+PCA_1st_filtering <- ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values2), 1, 1))) + theme_classic()
+PCA_1st_filtering
+```
+
+DESeq:
+```{r}
+analysis2 <- DESeq(dataset2)
+res2 <- results(analysis2)
+summary(res2)
+```
+
+
+Anotiranje:
+```{r}
+KOs2 <- data.table(KO = rownames(res2[res2$padj < 0.1 & !is.na(res2$padj),]))
+KOs2[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs2)]
+KOs2[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs2)]
+
+
+KOs_1st_filtering <- copy(KOs2)
+```
+
+
+
+
+
+Izbacivanje outlier-a (2. runda):
+```{r}
+dt_filtered2 <- dt_filtered[, -c(which(colnames(dt_filtered) %in% c("HD82", "HD18", "HD15", "HD20")))]
+```
+
+DESeq:
+```{r}
+coldata3 <- data.frame(sample = colnames(dt_filtered2))
+coldata3$condition <- "healthy"
+coldata3$condition[which(substr(coldata3$sample, 1, 1) == "L")] <- "cirrhotic"
+coldata3$condition <- factor(coldata3$condition, levels = c("healthy", "cirrhotic"))
+dataset3 <- DESeqDataSetFromMatrix(countData = dt_filtered2, colData = coldata3, design = ~ condition)
+```
+
+```{r}
+#pre-fitlering
+dataset3 <- dataset3[rowSums(counts(dataset3) > 0) > 2, ]
+```
+
+Transformation
+```{r}
+rlmean3 <- rlog(dataset3, fitType = "mean")
+```
+
+```{r}
+distances3 <- dist(t(assay(rlmean3)))
+```
+
+```{r}
+sampleDistMatrix <- as.matrix(distances3)
+rownames(sampleDistMatrix) <- colnames(dt_filtered2)
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = distances3,
+         clustering_distance_cols = distances3,
+         col = colors, 
+         cellheight = 6,
+         fontsize = 5)
+```
+
+PCA plot:
+```{r}
+rlog_values3 <- t(rlog(counts(dataset3)))
+colnames(rlog_values3) <- dt$genes
+PCA3 <- prcomp(rlog_values3, scale. = TRUE)
+ggbiplot(PCA3, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values3), 1, 1)), labels = row.names(PCA3$x)) + theme_classic()
+
+PCA_2nd_filtering <- ggbiplot(PCA3, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values3), 1, 1))) + theme_classic()
+PCA_2nd_filtering
+```
+
+DESeq:
+```{r}
+analysis3 <- DESeq(dataset3)
+res3 <- results(analysis3)
+summary(res3)
+```
+
+
+Anotiranje:
+```{r}
+KOs3 <- data.table(KO = rownames(res3[res3$padj < 0.1 & !is.na(res3$padj),]))
+KOs3 <- KOs3[-which(KOs3$KO %in% c("K03289", "K09470"))]
+KOs3[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs3)]
+KOs3[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs3)]
+
+KOs_2nd_filtering <- copy(KOs)
+```
+
+
+```{}
+plotMA(res)
+summary(assay(dataset))
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(data.frame(row.names=rownames(res)[res$padj < 0.05],res$log2FoldChange[res$padj < 0.05]), gsets = ko.gs, samp = NULL, compare = "unpaired", FDR.adj = F)
+kegg.sig <- sigGeneSet(pathwayEnrich)
+kegg.sig
+```
+
+
+
+
+
+
+Usporedba zdravih s 3 klastera bolesnih:
+```{r}
+LDs <- PCA3$x[which(substr(rownames(PCA3$x), 1, 1) == "L"), 1:2]
+LDs <- kmeans(LDs, 3)
+LDs <- data.table(sample = names(LDs$cluster), cluster = LDs$cluster)
+LDs[, group := paste(c("L", cluster), collapse = ""), by = 1:nrow(LDs)]
+
+HDs <- data.table(sample = names(dt_filtered2[which(substr(names(dt_filtered2), 1, 1) == "H")]))
+HDs$condition = "healthy"
+HDs$group <- "H"
+```
+
+
+
+Grupa 1:
+```{r}
+grupa1 <- data.frame(rbind(HDs[, c(1, 3)], LDs[group == "L1", c(1, 3)]))
+grupa1$group <- factor(grupa1$group, levels = c("H", "L1"))
+dataset <- DESeqDataSetFromMatrix(countData = dt_filtered2[colnames(dt_filtered2) %in% grupa1$sample], colData = grupa1, design = ~ group)
+```
+
+```{r}
+#pre-fitlering
+dataset <- dataset[rowSums(counts(dataset) > 0) > 2, ]
+```
+
+Transformation
+```{r}
+rlmean <- rlog(dataset, fitType = "mean")
+```
+
+```{r}
+distances <- dist(t(assay(rlmean)))
+```
+
+```{r}
+sampleDistMatrix <- as.matrix(distances)
+rownames(sampleDistMatrix) <- colnames(dt_filtered2[colnames(dt_filtered2) %in% grupa1$sample])
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = distances,
+         clustering_distance_cols = distances,
+         col = colors, 
+         cellheight = 6,
+         fontsize = 5)
+```
+
+PCA plot:
+```{r}
+rlog_values <- t(rlog(counts(dataset)))
+colnames(rlog_values) <- dt$genes
+PCA <- prcomp(rlog_values, scale. = TRUE)
+
+PCA_group1 <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grupa1$group)) + theme_classic()
+PCA_group1
+```
+
+DESeq:
+```{r}
+analysis <- DESeq(dataset)
+res <- results(analysis)
+summary(res)
+
+#res[res$padj < 0.05 & abs(res$log2FoldChange) > 3, ]
+#res[abs(res$log2FoldChange)> 3 & !is.na(res$log2FoldChange) & res$padj < 0.05,] %>% as.data.frame() %>% arrange(log2FoldChange)
+```
+
+Anotiranje:
+```{r}
+KOs <- data.table(KO = rownames(res[res$padj < 0.1 & !is.na(res$padj),]))
+KOs <- KOs[-which(KOs$KO %in% c("K02301", "K03080", "K03081", "K05915", "K08345", "K08346", "K08347", "K08361", "K08567"))]
+KOs[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs)]
+KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
+
+KOs_group1 <- copy(KOs)
+```
+
+
+```{}
+plotMA(res)
+summary(assay(dataset))
+```
+
+
+Metabolic Module Identification
+```{r}
+path.set <- kegg.gsets("ko")
+ko.gs <- path.set$kg.sets
+```
+
+Extraction of fold-change (M) values for the samples.
+```{r}
+sampleMVals <- as.data.frame(res$log2FoldChange)
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(data.frame(row.names = rownames(res)[res$pvalue < 0.1][!is.na(rownames(res)[res$pvalue < 0.1])], res$log2FoldChange[res$pvalue < 0.1][!is.na(rownames(res)[res$pvalue < 0.1])]), gsets = ko.gs, samp = NULL, compare = "unpaired", FDR.adj = F)
+#pathwayEnrich <- gage(data.frame(row.names=rownames(res)[res$padj < 0.05],res$log2FoldChange[res$padj < 0.05]), gsets = ko.gs, samp = NULL, compare = "unpaired", FDR.adj = F)
+kegg.sig <- sigGeneSet(pathwayEnrich)
+kegg.sig
+```
+
+
+
+
+
+Grupa 2:
+```{r}
+grupa2 <- data.frame(rbind(HDs[, c(1, 3)], LDs[group == "L2", c(1, 3)]))
+grupa2$group <- factor(grupa2$group, levels = c("H", "L2"))
+dataset <- DESeqDataSetFromMatrix(countData = dt_filtered2[colnames(dt_filtered2) %in% grupa2$sample], colData = grupa2, design = ~ group)
+#head(assay(dataset))
+```
+
+```{r}
+#pre-fitlering
+dataset <- dataset[rowSums(counts(dataset) > 0) > 2, ]
+```
+
+Transformation
+```{r}
+rlmean <- rlog(dataset, fitType = "mean")
+```
+
+```{r}
+distances <- dist(t(assay(rlmean)))
+```
+
+```{r}
+sampleDistMatrix <- as.matrix(distances)
+rownames(sampleDistMatrix) <- colnames(dt_filtered2[colnames(dt_filtered2) %in% grupa2$sample])
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = distances,
+         clustering_distance_cols = distances,
+         col = colors, 
+         cellheight = 6,
+         fontsize = 5)
+```
+
+PCA plot:
+```{r}
+rlog_values <- t(rlog(counts(dataset)))
+colnames(rlog_values) <- dt$genes
+PCA <- prcomp(rlog_values, scale. = TRUE)
+
+PCA_group2 <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grupa2$group)) + theme_classic()
+PCA_group2
+```
+
+DESeq:
+```{r}
+analysis <- DESeq(dataset)
+res <- results(analysis)
+summary(res)
+
+#res[res$padj < 0.1 & abs(res$log2FoldChange) > 2, ]
+#res[abs(res$log2FoldChange)> 3 & !is.na(res$log2FoldChange) & res$padj < 0.05,] %>% as.data.frame() %>% arrange(log2FoldChange)
+```
+
+Anotiranje:
+```{r}
+KOs <- data.table(KO = rownames(res[res$padj < 0.1 & !is.na(res$padj),]))
+KOs[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs)]
+KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
+
+KOs_group2 <- copy(KOs)
+```
+
+```{}
+plotMA(res)
+summary(assay(dataset))
+```
+
+
+Metabolic Module Identification
+```{r}
+path.set <- kegg.gsets("ko")
+ko.gs <- path.set$kg.sets
+```
+
+Extraction of fold-change (M) values for the samples.
+```{r}
+sampleMVals <- as.data.frame(res$log2FoldChange)
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(data.frame(row.names = rownames(res)[res$pvalue < 0.1], res$log2FoldChange[res$pvalue < 0.1]), gsets = ko.gs, samp = NULL, compare = "unpaired", FDR.adj = F)
+#pathwayEnrich <- gage(data.frame(row.names=rownames(res)[res$padj < 0.05],res$log2FoldChange[res$padj < 0.05]), gsets = ko.gs, samp = NULL, compare = "unpaired", FDR.adj = F)
+kegg.sig <- sigGeneSet(pathwayEnrich)
+kegg.sig
+```
+
+
+
+
+
+Grupa 3:
+```{r}
+grupa3 <- data.frame(rbind(HDs[, c(1, 3)], LDs[group == "L3", c(1, 3)]))
+grupa3$group <- factor(grupa3$group, levels = c("H", "L3"))
+dataset <- DESeqDataSetFromMatrix(countData = dt_filtered2[colnames(dt_filtered2) %in% grupa3$sample], colData = grupa3, design = ~ group)
+#head(assay(dataset))
+```
+
+```{r}
+#pre-fitlering
+dataset <- dataset[rowSums(counts(dataset) > 0) > 2, ]
+```
+
+Transformation
+```{r}
+rlmean <- rlog(dataset, fitType = "mean")
+```
+
+```{r}
+distances <- dist(t(assay(rlmean)))
+```
+
+```{r}
+sampleDistMatrix <- as.matrix(distances)
+rownames(sampleDistMatrix) <- colnames(dt_filtered2[colnames(dt_filtered2) %in% grupa3$sample])
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = distances,
+         clustering_distance_cols = distances,
+         col = colors, 
+         cellheight = 6,
+         fontsize = 5)
+```
+
+PCA plot:
+```{r}
+rlog_values <- t(rlog(counts(dataset)))
+colnames(rlog_values) <- dt$genes
+PCA <- prcomp(rlog_values, scale. = TRUE)
+
+PCA_group3 <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grupa3$group)) + theme_classic()
+PCA_group3
+```
+
+DESeq:
+```{r}
+analysis <- DESeq(dataset)
+res <- results(analysis)
+summary(res)
+
+#res[res$padj < 0.5 & abs(res$log2FoldChange) > 2 & !is.na(res$padj) & !is.na(res$log2FoldChange), ]
+#res[res$padj < 0.01 & !is.na(res$padj), ]
+
+#res[abs(res$log2FoldChange)> 3 & !is.na(res$log2FoldChange) & res$padj < 0.05,] %>% as.data.frame() %>% arrange(log2FoldChange)
+```
+
+Anotiranje:
+```{r}
+KOs <- data.table(KO = rownames(res[res$padj < 0.1 & !is.na(res$padj),]))
+KOs[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs)]
+KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
+
+KOs_group3 <- copy(KOs)
+```
+
+```{}
+plotMA(res)
+summary(assay(dataset))
+```
+
+
+Metabolic Module Identification
+```{r}
+path.set <- kegg.gsets("ko")
+ko.gs <- path.set$kg.sets
+```
+
+Extraction of fold-change (M) values for the samples.
+```{r}
+sampleMVals <- as.data.frame(res$log2FoldChange)
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(data.frame(row.names = rownames(res)[res$pvalue < 0.1], res$log2FoldChange[res$pvalue < 0.1]), gsets = ko.gs, samp = NULL, compare = "unpaired", FDR.adj = F)
+#pathwayEnrich <- gage(data.frame(row.names=rownames(res)[res$padj < 0.05],res$log2FoldChange[res$padj < 0.05]), gsets = ko.gs, samp = NULL, compare = "unpaired", FDR.adj = F)
+kegg.sig <- sigGeneSet(pathwayEnrich)
+kegg.sig
+```
+
+
+
+Sumirano:
+```{r}
+PCA_nofiltering
+KOs_nofiltering
+```
+
+```{r}
+PCA_1st_filtering
+KOs_1st_filtering
+```
+
+```{r}
+PCA_2nd_filtering
+KOs_2nd_filtering
+#isti rezultati kao i prije izbacivanja outliera
+```
+
+```{r}
+PCA_group1
+KOs_group1
+```
+
+```{r}
+PCA_group2
+#KOs_group2   neam jer nisam nista dobila
+```
+
+```{r}
+PCA_group3
+KOs_group3
+```
+
+
+
+
+
+Usporedba s ostalim podacima:
+```{r warning=FALSE}
+library(readxl)
+table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
+table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
+table1 <- table1[, c(1, 3:8, 11:13)]
+```
+
+```{r}
+tablica <- copy(table1)
+tablica$Gender[tablica$Gender == "female"] <- 1
+tablica$Gender[tablica$Gender == "male"] <- 0
+tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "Y"] <- 1
+tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "N"] <- 0
+tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "Y"] <- 1
+tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "N"] <- 0
+tablica$`Cirrhotic(Y or N)`[tablica$`Cirrhotic(Y or N)` == "Y"] <- 1
+tablica$`Cirrhotic(Y or N)`[tablica$`Cirrhotic(Y or N)` == "N"] <- 0
+```
+
+```{r}
+#pairs(apply(as.matrix(tablica[, 2:10]), 2, as.numeric), col = as.numeric(coldata$condition) + 1)
+```
+
+
+
+```{r}
+metadt <- copy(tablica[which(tablica$`Sample ID` %in% names(dt_filtered2)), ])
+metadt$group <- 0
+
+metadt$group[metadt$`Sample ID` %in% grupa1$sample[which(substr(grupa1$sample, 1, 1) == "L")]] <- 1
+metadt$group[metadt$`Sample ID` %in% grupa2$sample[which(substr(grupa2$sample, 1, 1) == "L")]] <- 2
+metadt$group[metadt$`Sample ID` %in% grupa3$sample[which(substr(grupa3$sample, 1, 1) == "L")]] <- 3
+```
+
+
+
+Samo bolesni:
+```{r}
+bolesni <- metadt[substr(metadt$`Sample ID`, 1, 1) == "L", ]
+```
+
+```{r}
+PCA_metadt <- prcomp(apply(as.matrix(bolesni[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA_metadt, ellipse = TRUE, var.axes = FALSE, groups = factor(bolesni$group)) + theme_classic()
+PCA_metadt$rotation
+```
+
+
+Regresija:
+  -ovise li grupe o alkoholu ili HBV-u
+```{r}
+summary(lm(bolesni$group ~ bolesni$`HBV related  (Y or N)` + bolesni$`Alcohol related (Y or N)`))
+summary(lm(bolesni$group ~ bolesni$`Alcohol related (Y or N)`))
+```
+
+
+
+
+```{r}
+#kako se razdvajaju ovisno o grupama (0 = healthy)
+PCA_metadt2 <- prcomp(apply(as.matrix(proba_dt[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA_metadt2, ellipse = TRUE, var.axes = FALSE, groups = factor(proba_dt$group)) + theme_classic()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PCA plots:
+
+S albuminom i bilirubinom:
+```{r}
+PCA1 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA1, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+PCA1$rotation
+```
+
+Bez njih:
+```{r}
+PCA2 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:8)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+```
+
+Bez bilirubina:
+```{r}
+PCA3 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:9)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA3, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+```
+
+Bez albumina:
+```{r}
+PCA4 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:8, 10)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA4, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+```
+
+
+
+
+
+
+
+PCA plots:
+```{r warning=FALSE}
+library(readxl)
+table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
+table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
+table1 <- table1[, c(1, 3:8, 11:13)]
+```
+
+```{r}
+coldata <- data.frame(sample = unique(samples))
+coldata$condition <- "healthy"
+coldata$condition[which(substr(coldata$sample, 1, 1) == "L")] <- "cirrhotic"
+coldata$condition <- factor(coldata$condition, levels = c("healthy", "cirrhotic"))
+dataset <- DESeqDataSetFromMatrix(countData = dt, colData = coldata, design = ~ condition)
+```
+
+```{r}
+#pre-fitlering
+dataset <- dataset[ rowSums(counts(dataset) > 0) > 2, ]
+```
+
+```{r}
+rlog_values <- t(rlog(counts(dataset)))
+PCA <- prcomp(rlog_values, scale. = TRUE)
+```
+
+```{r}
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$Gender)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`HBV related  (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`Alcohol related (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+```
+
+```{r}
+BMIs <- cut(table1$`BMI (kg/m2)`, quantile(table1$`BMI (kg/m2)`))
+ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = BMIs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+```
+
+
+```{r}
+TBs <- factor(round(log(table1$`TB (umol/L)`)*2))
+ggbiplot(PCA, choices = c(2,3), ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() 
+```
+
+
+
+
+
+
+
+
+Poveznica direktno izmedu codon usage-a i metadata
+```{r}
+head(codonsInSamples2)
+codon_usage <- data.table(condition = substr(getID(codonsInSamples2), 1, 1),
+                          codonCounts(codonsInSamples2))
+codon_usage$condition[codon_usage$condition == "H"] <- 1
+codon_usage$condition[codon_usage$condition == "L"] <- 0
+
+summary(lm(condition ~ ., codon_usage))
+
+PCA <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:8)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+
+PCA <- prcomp(apply(as.matrix(codon_usage), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(codon_usage$condition, 1, 1))) + theme_classic()
+```
+
+
+
+
+
+
+
+
+
