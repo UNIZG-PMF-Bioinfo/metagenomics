@@ -248,6 +248,7 @@ KOs2 <- data.table(KO = rownames(res2[res2$padj < 0.1 & !is.na(res2$padj),]))
 KOs2[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs2)]
 KOs2[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs2)]
 
+
 KOs_1st_filtering <- copy(KOs2)
 ```
 
@@ -318,8 +319,7 @@ summary(res3)
 Anotiranje:
 ```{r}
 KOs3 <- data.table(KO = rownames(res3[res3$padj < 0.1 & !is.na(res3$padj),]))
-#KOs3 <- KOs3[-c(which((KOs3$KO == c("K03081", "K08345")), arr.ind = T))]
-KOs3 <- KOs3[-c(74, 162)]
+KOs3 <- KOs3[-which(KOs3$KO %in% c("K03289", "K09470"))]
 KOs3[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs3)]
 KOs3[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs3)]
 
@@ -346,12 +346,13 @@ kegg.sig
 
 Usporedba zdravih s 3 klastera bolesnih:
 ```{r}
-LDs <- PCA$x[which(substr(rownames(PCA$x), 1, 1) == "L"), 1:2]
+LDs <- PCA3$x[which(substr(rownames(PCA3$x), 1, 1) == "L"), 1:2]
 LDs <- kmeans(LDs, 3)
 LDs <- data.table(sample = names(LDs$cluster), cluster = LDs$cluster)
 LDs[, group := paste(c("L", cluster), collapse = ""), by = 1:nrow(LDs)]
 
-HDs <- coldata3[coldata3$condition == "healthy", ]
+HDs <- data.table(sample = names(dt_filtered2[which(substr(names(dt_filtered2), 1, 1) == "H")]))
+HDs$condition = "healthy"
 HDs$group <- "H"
 ```
 
@@ -396,9 +397,9 @@ PCA plot:
 rlog_values <- t(rlog(counts(dataset)))
 colnames(rlog_values) <- dt$genes
 PCA <- prcomp(rlog_values, scale. = TRUE)
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grupa1$group)) + theme_classic()
 
 PCA_group1 <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grupa1$group)) + theme_classic()
+PCA_group1
 ```
 
 DESeq:
@@ -414,6 +415,7 @@ summary(res)
 Anotiranje:
 ```{r}
 KOs <- data.table(KO = rownames(res[res$padj < 0.1 & !is.na(res$padj),]))
+KOs <- KOs[-which(KOs$KO %in% c("K02301", "K03080", "K03081", "K05915", "K08345", "K08346", "K08347", "K08361", "K08567"))]
 KOs[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs)]
 KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
 
@@ -445,8 +447,6 @@ pathwayEnrich <- gage(data.frame(row.names = rownames(res)[res$pvalue < 0.1][!is
 kegg.sig <- sigGeneSet(pathwayEnrich)
 kegg.sig
 ```
-
-
 
 
 
@@ -492,9 +492,9 @@ PCA plot:
 rlog_values <- t(rlog(counts(dataset)))
 colnames(rlog_values) <- dt$genes
 PCA <- prcomp(rlog_values, scale. = TRUE)
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grupa2$group)) + theme_classic()
 
 PCA_group2 <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grupa2$group)) + theme_classic()
+PCA_group2
 ```
 
 DESeq:
@@ -585,9 +585,9 @@ PCA plot:
 rlog_values <- t(rlog(counts(dataset)))
 colnames(rlog_values) <- dt$genes
 PCA <- prcomp(rlog_values, scale. = TRUE)
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grupa3$group)) + theme_classic()
 
 PCA_group3 <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grupa3$group)) + theme_classic()
+PCA_group3
 ```
 
 DESeq:
@@ -605,13 +605,10 @@ summary(res)
 Anotiranje:
 ```{r}
 KOs <- data.table(KO = rownames(res[res$padj < 0.1 & !is.na(res$padj),]))
-KOs <- KOs[-c(which(KOs$KO == c("K05915", "K02301", "K03080", "K03081", "K05876"), arr.ind = T))]
 KOs[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs)]
 KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
 
 KOs_group3 <- copy(KOs)
-KOs$name
-KOs$KO[256]
 ```
 
 ```{}
@@ -655,16 +652,17 @@ KOs_1st_filtering
 ```{r}
 PCA_2nd_filtering
 KOs_2nd_filtering
+#isti rezultati kao i prije izbacivanja outliera
 ```
 
 ```{r}
 PCA_group1
-#KOs_group1
+KOs_group1
 ```
 
 ```{r}
 PCA_group2
-#KOs_group2
+#KOs_group2   neam jer nisam nista dobila
 ```
 
 ```{r}
@@ -676,96 +674,7 @@ KOs_group3
 
 
 
-
-
-
-### beskorisni dio
-
-
-Analiza top gena:
-padj < 0,05
-LFC > 0, 1, 2
-pathview
-```{r}
-#padj < 0,05
-length(which(res$padj < 0.05, arr.ind = T))
-res[which(res$padj < 0.05, arr.ind = T), ]
-#pvalue < 0,05
-length(which(res$pvalue < 0.05, arr.ind = T))
-res[which(res$pvalue < 0.05, arr.ind = T), ]
-#LFC > 2
-length(which(res$lfcSE > 2, arr.ind = T))
-res[which(res$lfcSE > 2, arr.ind = T), ]
-#LFC > 2 i pvalue < 0,05 
-length(which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T))  #41 gen
-#topGenes <- res[which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T), ]
-#topGenes <- res[which(res$padj < 0.05, arr.ind = T), ]
-topGenes4 <- which(res$padj < 0.05, arr.ind = T)
-topGenes41 <- res[which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T), ]
-top41 <- which(res$lfcSE > 1 & res$pvalue < 0.05, arr.ind = T)
-```
-
-
-
-Pathview:
-```{r}
-require(KEGGREST)
-paths <- names(keggList("pathway"))
-paths <- regmatches(paths, regexpr("{2,4}\\d{5}", paths))
-#pnames <- unname(keggList("pathway"))
-
-data("demo.paths")
-```
-
-```{r}
-setwd("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\pathview")
-#setwd("C:\\Users\\pavli\\Desktop\\FAKS\\DS\\4. semestar\\diplomski rad\\R\\pathview")
-#data(demo.paths)
-pv <- pathview(gene.data = rownames(dt[topGenes41, ]), pathway.id = paths, species = "ko")
-pv <- pathview(gene.data = dt[topGenes4, ], pathway.id = paths, species = "ko")
-```
-
-#######
-
-
-
-
-
-Korelacije:
-```{r warning=FALSE}
-library(readxl)
-table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\rad\\Supplementary information\\nature13568-s1\\Table 1.xlsx", col_types = c("text", "text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
-table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
-table1 <- table1[1:181, c(2, 4:10, 12:14)]
-table1$condition <- "healthy"
-table1$condition[which(substr(table1$`Sample ID`, 1, 1) == "L")] <- "cirrhotic"
-```
-
-```{r}
-proba <- table1[, c(2:4, 12)]
-#proba <- table1[, c(2:4, 6:7, 12)]
-proba$Gender[proba$Gender == "female"] <- 1
-proba$Gender[proba$Gender == "male"] <- 0
-proba$condition[proba$condition == "healthy"] <- 1
-proba$condition[proba$condition == "cirrhotic"] <- 0
-#proba$`HBV related  (Y or N)`[proba$`HBV related  (Y or N)` == "Y"] <- 1
-#proba$`HBV related  (Y or N)`[proba$`HBV related  (Y or N)` == "N"] <- 0
-#proba$`Alcohol related (Y or N)`[proba$`Alcohol related (Y or N)` == "Y"] <- 1
-#proba$`Alcohol related (Y or N)`[proba$`Alcohol related (Y or N)` == "N"] <- 0
-
-#proba <- data.frame(condition = as.numeric(proba$condition), gender = as.numeric(proba$Gender), age = as.numeric(proba$Age), BMI = as.numeric(proba$`BMI (kg/m2)`), HBV_related = as.numeric(proba$`HBV related  (Y or N)`), alcohol_related = as.numeric(proba$`Alcohol related (Y or N)`))
-
-proba <- data.frame(condition = as.numeric(proba$condition), gender = as.numeric(proba$Gender), age = as.numeric(proba$Age), BMI = as.numeric(proba$`BMI (kg/m2)`))
-
-
-cor(proba)
-```
-
-
-
-
-
-PCA plots:
+Usporedba s ostalim podacima:
 ```{r warning=FALSE}
 library(readxl)
 table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
@@ -773,37 +682,6 @@ table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extrac
 table1 <- table1[, c(1, 3:8, 11:13)]
 ```
 
-```{r}
-rlog_values <- t(rlog(counts(dataset)))
-colnames(rlog_values) <- dt$genes
-PCA <- prcomp(rlog_values, scale. = TRUE)
-```
-
-```{r}
-ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$Gender)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`HBV related  (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`Alcohol related (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-```
-
-```{r}
-BMIs <- cut(table1$`BMI (kg/m2)`, quantile(table1$`BMI (kg/m2)`))
-ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = BMIs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-```
-
-
-```{r}
-TBs <- factor(round(log(table1$`TB (umol/L)`)*2))
-ggbiplot(PCA, choices = c(2,3), ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() 
-```
-
-
-
-
-
-
-
-Klasteriranje podataka:
 ```{r}
 tablica <- copy(table1)
 tablica$Gender[tablica$Gender == "female"] <- 1
@@ -817,12 +695,71 @@ tablica$`Cirrhotic(Y or N)`[tablica$`Cirrhotic(Y or N)` == "N"] <- 0
 ```
 
 ```{r}
-pairs(apply(as.matrix(tablica[, 2:10]), 2, as.numeric), col = as.numeric(coldata$condition) + 1)
+#pairs(apply(as.matrix(tablica[, 2:10]), 2, as.numeric), col = as.numeric(coldata$condition) + 1)
+```
+
+
+
+```{r}
+metadt <- copy(tablica[which(tablica$`Sample ID` %in% names(dt_filtered2)), ])
+metadt$group <- 0
+
+metadt$group[metadt$`Sample ID` %in% grupa1$sample[which(substr(grupa1$sample, 1, 1) == "L")]] <- 1
+metadt$group[metadt$`Sample ID` %in% grupa2$sample[which(substr(grupa2$sample, 1, 1) == "L")]] <- 2
+metadt$group[metadt$`Sample ID` %in% grupa3$sample[which(substr(grupa3$sample, 1, 1) == "L")]] <- 3
+```
+
+
+
+Samo bolesni:
+```{r}
+bolesni <- metadt[substr(metadt$`Sample ID`, 1, 1) == "L", ]
+```
+
+```{r}
+PCA_metadt <- prcomp(apply(as.matrix(bolesni[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA_metadt, ellipse = TRUE, var.axes = FALSE, groups = factor(bolesni$group)) + theme_classic()
+PCA_metadt$rotation
+```
+
+
+Regresija:
+  -ovise li grupe o alkoholu ili HBV-u
+```{r}
+summary(lm(bolesni$group ~ bolesni$`HBV related  (Y or N)` + bolesni$`Alcohol related (Y or N)`))
+summary(lm(bolesni$group ~ bolesni$`Alcohol related (Y or N)`))
 ```
 
 
 
 
+```{r}
+#kako se razdvajaju ovisno o grupama (0 = healthy)
+PCA_metadt2 <- prcomp(apply(as.matrix(proba_dt[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
+ggbiplot(PCA_metadt2, ellipse = TRUE, var.axes = FALSE, groups = factor(proba_dt$group)) + theme_classic()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PCA plots:
 
 S albuminom i bilirubinom:
 ```{r}
@@ -830,7 +767,6 @@ PCA1 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:10)]), 2, as.numeric), scale. 
 ggbiplot(PCA1, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
 PCA1$rotation
 ```
-
 
 Bez njih:
 ```{r}
@@ -856,239 +792,51 @@ ggbiplot(PCA4, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames
 
 
 
-A function which does kmeans clustering for 1000 times, calculates average missclassification rates and standard deviation for each cluster and calculates (incorrectly) a consensus cluster for each sample:
-```{r}
-funfunfun <- function(N){
-  missclassification <- function(cl){
-   cl <- unlist(cl)
-   names(cl) <- substr(names(unlist(clustering[1])), 1, 1)
-   classy <- data.table(condition = names(cl), cluster = cl)
-   
-   minimum <- 
-     data.table(matrix(table(classy), ncol = N)) %>% 
-     mutate_all(., min) %>% 
-     slice(., 1)
-   suma <- 
-     data.table(matrix(table(classy), ncol = N)) %>% 
-     mutate_all(., sum) %>% 
-     slice(., 1)
-   
-   mc_rate <- minimum/suma
-   return(mc_rate)
-  }
-
-  clustering <- replicate(1000, kmeans(distances, N))
-  
-  #dio koji odreduje konsenzus klaster:
-    #ovaj dio nije tocan
-  clusters <- matrix(unlist(clustering[1, ]), ncol = 1000) #svaki red je jedan uzorak
-  consensus_clst <- data.table(cbind(sample = tablica$`Sample ID`, clusters))
-  consensus_clst[, cluster := which.max(table(as.matrix(.SD))), .SDcols = V2:V1001, by = sample]
-  
-  #dio koji racuna mc_rate i st_dev:
-    #applyam na svaki red missclassification funkciju i to stavim kao mc_rates kolonu i onda toj koloni jos izracunam srednju vrijednost
-  all_clusters <- data.table(clustering[1, ])
-  all_clusters[, mc_rates := lapply(V1, missclassification)]
-  mc_rates <- data.table(matrix(unlist(all_clusters$mc_rates), ncol = N, byrow = T))
-  missclass <- data.table(cluster = 1:N, mc_rates = unlist(unique(mutate_all(mc_rates, mean))), st_dev = unlist(unique(mutate_all(mc_rates, sd))))
-  
-  final_dt <- merge(consensus_clst, missclass, by = "cluster")[, c(1, 2, 1003, 1004)]
-  return(final_dt)
-}
-```
-
-
-The argument for the funfunfun function is the wanted number of clusters:
-```{r}
-set.seed(753)
-sample_dt <- funfunfun(3)
-
-#mc_rate ovisnosti nece imati ucinka kada su sve gotovo iste
-regresije <- copy(tablica[, c(1, 5, 6, 7, 9, 10)])
-colnames(regresije) <- c("sample", "condition", "HBV", "alcohol", "albumin", "bilirubin")
-
-regresije <- merge(regresije, sample_dt, by = "sample")
-#regresije$cluster
-#unique(regresije$cluster)
-
-#unique(sample_dt[, c(1, 3:4)])
+PCA plots:
+```{r warning=FALSE}
+library(readxl)
+table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
+table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
+table1 <- table1[, c(1, 3:8, 11:13)]
 ```
 
 ```{r}
-summary(lm(cluster ~ albumin + bilirubin, regresije))
-summary(lm(cluster ~ albumin, regresije))
-summary(lm(cluster ~ bilirubin, regresije))
+coldata <- data.frame(sample = unique(samples))
+coldata$condition <- "healthy"
+coldata$condition[which(substr(coldata$sample, 1, 1) == "L")] <- "cirrhotic"
+coldata$condition <- factor(coldata$condition, levels = c("healthy", "cirrhotic"))
+dataset <- DESeqDataSetFromMatrix(countData = dt, colData = coldata, design = ~ condition)
+```
 
-summary(lm(cluster ~ condition, regresije))
-summary(lm(condition ~ cluster, regresije))
+```{r}
+#pre-fitlering
+dataset <- dataset[ rowSums(counts(dataset) > 0) > 2, ]
+```
 
-#summary(lm(mc_rate ~ albumin + bilirubin, regresije))
-#summary(lm(mc_rate ~ albumin, regresije))
+```{r}
+rlog_values <- t(rlog(counts(dataset)))
+PCA <- prcomp(rlog_values, scale. = TRUE)
+```
 
-#summary(lm(mc_rate ~ bilirubin, regresije))
+```{r}
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$Gender)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`HBV related  (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`Alcohol related (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+```
 
-#ovisnost klastera o tome je li uzrokovano HBV-om ili ne:
-summary(lm(cluster ~ alcohol + HBV, regresije))
-summary(lm(cluster ~ HBV, regresije))
-
-#summary(lm(mc_rate ~ alcohol + HBV, regresije))
-#summary(lm(mc_rate ~ HBV, regresije))
+```{r}
+BMIs <- cut(table1$`BMI (kg/m2)`, quantile(table1$`BMI (kg/m2)`))
+ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = BMIs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
 ```
 
 
 ```{r}
-regresije[, c("sample", "cluster")]
+TBs <- factor(round(log(table1$`TB (umol/L)`)*2))
+ggbiplot(PCA, choices = c(2,3), ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
+ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() 
 ```
 
 
-
-
-
-
-
-```{r}
-funfunfun <- function(N){
-  missclassification <- function(cl){
-   cl <- unlist(cl)
-   names(cl) <- substr(names(unlist(clustering[1])), 1, 1)
-   classy <- data.table(condition = names(cl), cluster = cl)
-   
-   minimum <- 
-     data.table(matrix(table(classy), ncol = N)) %>% 
-     mutate_all(., min) %>% 
-     slice(., 1)
-   suma <- 
-     data.table(matrix(table(classy), ncol = N)) %>% 
-     mutate_all(., sum) %>% 
-     slice(., 1)
-   
-   mc_rate <- minimum/suma
-   return(mc_rate)
-  }
-
-  clustering <- replicate(1000, kmeans(distances, N))
-  
-  #dio koji odreduje konsenzus klaster:
-  grupe <- ConsensusClusterPlus(distances, maxK = 10, reps = 1000, pFeature = 1, pItem = 0.8, distance = "euclidean", clusterAlg = "km")
-  selected_cl <- proba[[N]][["consensusMatrix"]]
-  clst <- kmeans(selected_cl, N)
-  consensus_clst <- data.table(sample = tablica$`Sample ID`, cluster = clst$cluster)
-  
-  #dio koji racuna mc_rate i st_dev:
-    #applyam na svaki red missclassification funkciju i to stavim kao mc_rates kolonu i onda toj koloni jos izracunam srednju vrijednost
-  all_clusters <- data.table(clustering[1, ])
-  all_clusters[, mc_rates := lapply(V1, missclassification)]
-  mc_rates <- data.table(matrix(unlist(all_clusters$mc_rates), ncol = N, byrow = T))
-  missclass <- data.table(cluster = 1:N, mc_rates = unlist(unique(mutate_all(mc_rates, mean))), st_dev = unlist(unique(mutate_all(mc_rates, sd))))
-  
-  final_dt <- merge(consensus_clst, missclass, by = "cluster")
-  return(final_dt)
-}
-```
-
-
-
-
-proba:
-
-```{r}
-consensus_clst <- function(N){
-  grupe <- ConsensusClusterPlus(distances, maxK = 10, reps = 1000, pFeature = 1, pItem = 0.8, distance = "euclidean", clusterAlg = "km")
-  selected_cl <- proba[[N]][["consensusMatrix"]]
-  clst <- kmeans(selected_cl, N)
-  consensus_clst <- data.table(sample = tablica$`Sample ID`, cluster = clst$cluster)
-  return(consensus_clst)
-}
-
-
-funfunfun <- function(N){
-  missclassification <- function(cl){
-   cl <- unlist(cl)
-   names(cl) <- substr(names(unlist(clustering[1])), 1, 1)
-   classy <- data.table(condition = names(cl), cluster = cl)
-   
-   minimum <- 
-     data.table(matrix(table(classy), ncol = N)) %>% 
-     mutate_all(., min) %>% 
-     slice(., 1)
-   suma <- 
-     data.table(matrix(table(classy), ncol = N)) %>% 
-     mutate_all(., sum) %>% 
-     slice(., 1)
-   
-   mc_rate <- minimum/suma
-   return(mc_rate)
-  }
-
-  clustering <- replicate(1000, kmeans(distances, N))
-  
-  #dio koji odreduje konsenzus klaster:
-  consensus_clst <- consensus_clst(N)
-  
-  #dio koji racuna mc_rate i st_dev:
-    #applyam na svaki red missclassification funkciju i to stavim kao mc_rates kolonu i onda toj koloni jos izracunam srednju vrijednost
-  all_clusters <- data.table(clustering[1, ])
-  all_clusters[, mc_rates := lapply(V1, missclassification)]
-  mc_rates <- data.table(matrix(unlist(all_clusters$mc_rates), ncol = N, byrow = T))
-  missclass <- data.table(cluster = 1:N, mc_rates = unlist(unique(mutate_all(mc_rates, mean))), st_dev = unlist(unique(mutate_all(mc_rates, sd))))
-  
-  final_dt <- merge(consensus_clst, missclass, by = "cluster")[, c(1, 2, 1003, 1004)]
-  return(final_dt)
-}
-```
-
-
-
-```{r}
-grupe <- ConsensusClusterPlus(distances, maxK = 10, reps = 1000, pFeature = 1, pItem = 0.8, distance = "euclidean", clusterAlg = "km")
-selected_cl <- proba[[5]][["consensusMatrix"]]
-clst <- kmeans(selected_cl, 5)
-consensus_clst <- data.table(sample = tablica$`Sample ID`, cluster = clst$cluster)
-
-
-missclassification <- function(cl){
-   cl <- unlist(cl)
-   names(cl) <- substr(names(unlist(clustering[1])), 1, 1)
-   classy <- data.table(condition = names(cl), cluster = cl)
-   
-   minimum <- 
-     data.table(matrix(table(classy), ncol = 5)) %>% 
-     mutate_all(., min) %>% 
-     slice(., 1)
-   suma <- 
-     data.table(matrix(table(classy), ncol = 5)) %>% 
-     mutate_all(., sum) %>% 
-     slice(., 1)
-   
-   mc_rate <- minimum/suma
-   return(mc_rate)
-}
-
-#dio koji racuna mc_rate i st_dev:
-  #applyam na svaki red missclassification funkciju i to stavim kao mc_rates kolonu i onda toj koloni jos izracunam srednju vrijednost
-all_clusters <- data.table(clustering[1, ])
-all_clusters[, mc_rates := lapply(V1, missclassification)]
-mc_rates <- data.table(matrix(unlist(all_clusters$mc_rates), ncol = 5, byrow = T))
-missclass <- data.table(cluster = 1:5, mc_rates = unlist(unique(mutate_all(mc_rates, mean))), st_dev = unlist(unique(mutate_all(mc_rates, sd))))
-
-final_dt <- merge(consensus_clst, missclass, by = "cluster")
-
-
-```
-
-
-
-```{r}
-grupe <- ConsensusClusterPlus(distances, maxK = 10, reps = 1000, pFeature = 1, pItem = 0.8, distance = "euclidean", clusterAlg = "km")
-five <- proba[[5]][["consensusMatrix"]]
-clst <- kmeans(five, 5)
-
-final_cluster <- data.table(samples = tablica$`Sample ID`, cluster = clst$cluster)
-setorder(final_cluster, cluster)
-
-
-?ConsensusClusterPlus
-```
 
 
 
