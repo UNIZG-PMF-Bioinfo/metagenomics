@@ -21,10 +21,13 @@ library("pathview")
 library("gage")
 library("ConsensusClusterPlus")
 library("KEGGREST")
+library("tidyr")
 ```
 
 ```{r}
 my_fasta_file_folder <- "C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\60uzoraka"
+#my_fasta_file_folder <- "C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\10uzoraka"
+#my_fasta_file_folder <- "C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\4"
 #my_fasta_file_folder <- "C:\\Users\\pavli\\Desktop\\FAKS\\DS\\4. semestar\\diplomski rad\\samples\\10uzoraka"
 codonsInSamples <- readSet(my_fasta_file_folder, prepend.filenames = T)
 codonsInSamples2 <- codonTable(codonsInSamples)
@@ -38,61 +41,76 @@ samples <- str_extract(getID(codonsInSamples2), "[HL]D\\d+")
 ```
 
 
+```{r}
+uzorci <- data.table(sample = samples, KO = getKO(codonsInSamples2))
+
+#how many times each KO appears in each sample:
+KO_dist <- as.data.table(table(uzorci))
+KO_dist$condition <- "healthy"
+KO_dist[substr(KO_dist$sample, 1, 1) == "L", condition := "cirrhotic"]
+KO_dist[order(-N)]
+
+ggplot(KO_dist, aes(as.factor(sample), N)) + geom_boxplot() + xlab("samples") + ylab("number of each KO") + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+#for each KO, in how many different samples it appears:
+KO_dist2 <- KO_dist[N>0,.N,.(KO, condition)]
+
+ggplot(KO_dist2, aes(N, fill = condition)) + geom_histogram(color = "black") + xlab("number of samples in which KO appears") + ylab("number of KOs")
+#ggplot(KO_dist2, aes(N, fill = condition)) + geom_histogram(position = "fill", color = "black") + xlab("number of samples in which KO appears") + ylab("number of KOs")
+ggplot(KO_dist2, aes(N, fill = condition)) + geom_histogram(position = "dodge") + xlab("number of samples in which KO appears") + ylab("number of KOs")
+```
+
+
+
+
+
 Ispravljeno:
 ```{r}
-codonsInSamples2
-getID(codonsInSamples2)
+uzorci <- data.table(sample = samples, KO = getKO(codonsInSamples2))
 
-uzorci <- data.table(sample = samples, KO = getKO(codonsInSamples2), codonCounts(codonsInSamples2))
+counts <- table(uzorci$sample)
+
+for (x in 1:length(counts)){
+  if (x == 1){
+    sets <- list(c(rep(TRUE, counts[x]), rep(FALSE, (sum(counts) - counts[x])))) 
+  }
+  if (x == length(counts)){
+    sets <- append(sets, list(c(rep(FALSE, sum(counts[1:(x-1)])), rep(TRUE, counts[x]))))
+  }
+  if (x != 1 & x != length(counts)) {
+    sets <- append(sets, list(c(rep(FALSE, sum(counts[1:(x-1)])), rep(TRUE, counts[x]), rep(FALSE, sum(counts[(x+1):length(counts)])))))
+  }
+}
+names(sets) <- names(counts)
 ```
 
 ```{r}
-subset(codonsInSamples2, getKO(codonsInSamples2) == "K11751")
-nj <- subset(codonsInSamples2, substr(getID(codonsInSamples2), 1, 3) == "HD1")
-
-unique(samples)
+melp <- MELP(codonsInSamples2, subsets = sets, ribosomal = TRUE)
+melp <- as.data.table(melp)
+melp <- mutate_all(melp, funs(round(10^(.))))
 ```
 
-```{r}
-tiny <- codonsInSamples2[1:50000]
-uzorci <- data.table(sample = str_extract(getID(tiny), "[HL]D\\d+"), KO = getKO(tiny), codonCounts(tiny))
-
-
-uzorci[, melp := MELP(tiny, subsets = sample), by = sample]
-uzorci[, melp := MELP(tiny, subsets = (list(selected = str_extract(getID(tiny), "[HL]D\\d+") == sample)), ribosomal = TRUE), by = sample]
-
-#E sad sredi ovaj dio da radi
-```
-
-
-
-```{r}
-melp <- MELP(codonsInSamples2, ribosomal = TRUE)
-```
 
 
 Density plot za 10 ^ meadian(MELP):
 ```{}
-dt <- data.table(sample = samples, genes = getKO(codonsInSamples2), MELP = as.numeric(melp))
-dt[, MELP := median(MELP), by = c("sample", "genes")]
-ggplot(dt, aes(10^MELP)) + geom_density() + coord_cartesian(xlim = c(0,20))
+dt <- data.table(genes = getKO(codonsInSamples2), melp[, 2:ncol(melp)])
+ggplot(dt, aes(dt$HD17)) + geom_density() + coord_cartesian(xlim = c(0,20))  #kako ih sve stavim?
 ```
+
 
 
 Priprema podataka:
 ```{r}
-dt <- data.table(sample = samples, genes = getKO(codonsInSamples2), MELP = as.numeric(melp))
-
-dtMelp <- copy(dt)
-
-dt[, MELP := round(10^median(MELP)), by = c("sample", "genes")]
-dt <- unique(dt)
-dt <- dcast(dt, genes ~ sample, value.var = "MELP")
-dt[is.na(dt)] <- 0
+dt <- data.table(genes = getKO(codonsInSamples2), melp[, 2:ncol(melp)])
+dt <- dt[, lapply(.SD, median), .SDcols = 2:ncol(dt), by = genes]
+dt <- dt[, lapply(.SD, round), .SDcols = 2:ncol(dt), by = genes]
 dt <- as.data.frame(dt)
-rownames(dt) <- dt$genes
+gene_names <- dt$genes
 dt <- dt[, 2:ncol(dt)]
+row.names(dt) <- gene_names
 ```
+
 
 
 DESeq:
@@ -114,11 +132,11 @@ dataset <- dataset[ rowSums(counts(dataset) > 0) > 2, ]
 Transformation
 ```{r}
 rlmean <- rlog(dataset, fitType = "mean")
-#vsd <- vst(dataset)
-#rld <- rlog(dataset)
+vsd <- vst(dataset)
+rld <- rlog(dataset)
 ```
 
-```{}
+```{r}
 dds <- estimateSizeFactors(dataset)
 df <- bind_rows(
   as_data_frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
@@ -138,7 +156,7 @@ distances <- dist(t(assay(rlmean)))
 ```{r}
 sampleDistMatrix <- as.matrix(distances)
 rownames(sampleDistMatrix) <- unique(samples)
-colnames(sampleDistMatrix) <- NULL
+colnames(sampleDistMatrix) <- unique(samples)
 colors <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
 pheatmap(sampleDistMatrix,
          clustering_distance_rows = distances,
@@ -147,6 +165,7 @@ pheatmap(sampleDistMatrix,
          cellheight = 6,
          fontsize = 5)
 ```
+
 
 PCA plot:
 ```{}
