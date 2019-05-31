@@ -22,6 +22,7 @@ library("gage")
 library("ConsensusClusterPlus")
 library("KEGGREST")
 library("tidyr")
+library("gridExtra")
 ```
 
 ```{r}
@@ -48,7 +49,7 @@ uzorci <- data.table(sample = samples, KO = getKO(codonsInSamples2))
 KO_dist <- as.data.table(table(uzorci))
 KO_dist$condition <- "healthy"
 KO_dist[substr(KO_dist$sample, 1, 1) == "L", condition := "cirrhotic"]
-KO_dist[order(-N)]
+#KO_dist[order(-N)]
 
 ggplot(KO_dist, aes(as.factor(sample), N)) + geom_boxplot() + xlab("samples") + ylab("number of each KO") + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
@@ -61,14 +62,21 @@ ggplot(KO_dist2, aes(N, fill = condition)) + geom_histogram(position = "dodge") 
 ```
 
 
-
-
-
-Ispravljeno:
+Distribution of KOs which appear 25 times or more:  onaj drugi dio kartice
 ```{r}
-uzorci <- data.table(sample = samples, KO = getKO(codonsInSamples2))
+KO_dist2[N >= 25, .N, .(KO)]
+```
 
-counts <- table(uzorci$sample)
+
+
+
+Filtering: removing KOs which appear 5 times or less
+```{r}
+uzorci <- KO_dist[N > 5][, 1:2]
+codonsInSamples3 <- codonsInSamples2[which(getKO(codonsInSamples2) %in% uzorci$KO)]
+
+smp <- data.table(sample = str_extract(getID(codonsInSamples3), "[HL]D\\d+"), KO = getKO(codonsInSamples3))
+counts <- table(smp$sample)
 
 for (x in 1:length(counts)){
   if (x == 1){
@@ -85,10 +93,51 @@ names(sets) <- names(counts)
 ```
 
 ```{r}
-melp <- MELP(codonsInSamples2, subsets = sets, ribosomal = TRUE)
+melp <- MELP(codonsInSamples3, subsets = sets, ribosomal = TRUE)
 melp <- as.data.table(melp)
-melp <- mutate_all(melp, funs(round(10^(.))))
+#melp <- mutate_all(melp, funs(round(10^(.))))
 ```
+
+
+
+
+Since we find more than 1 sequence with the same KO in each sample, maybe look at the variances of MELP values for this KO within each sample and see if we can conclude something based on this:
+```{r}
+sdev <- data.table(genes = getKO(codonsInSamples3), melp[, 2:ncol(melp)])
+sdev <- sdev[, lapply(.SD, sd), .SDcols = 2:ncol(sdev), by = genes]
+```
+
+```{r}
+KO_list <- c("K03346", "K04771", "K13148", "K00334", "K00851", "K09685", "K12511", "K02051", "K00926", "K02793", "K02350", "K00240", "K02203", "K08722", "K03272", "K11620", "K01848", "K01816", "K00948", "K05311", "K03444", "K03609", "K13021", "K01485", "K00824", "K02510", "K10778", "K01093", "K10557", "K11144", "K05310", "K10555", "K01961", "K00803", "K13923", "K01304")
+
+variances <- sdev[sdev$genes %in% KO_list]
+
+proba <- data.table(sample = sort(rep(colnames(variances)[2:ncol(variances)], length(variances$genes))),
+                    KO = rep(variances$genes, ncol(variances)-1))
+
+proba2 <- melt(t(variances[, 2:ncol(variances)]))[, c(1, 3)]
+colnames(proba2) <- c("sample", "st_dev")
+proba2$KO <- rep(variances$genes, each = length(unique(proba$sample)))
+
+variances_dt <- merge(proba, proba2, by = c("sample", "KO"))
+variances_dt[, condition := "healthy"]
+variances_dt[substr(sample, 1, 1) == "L", condition := "cirrhotic"]
+
+occurences <- KO_dist2[KO_dist2$KO %in% KO_list & KO_dist2$KO %in% sdev$genes]
+
+
+#boxplot of variances for a specific KO
+g1 <- ggplot(variances_dt, aes(as.factor(KO), st_dev, fill = condition)) + geom_boxplot() + xlab("KOs") + ylab("standard deviation of MELP values") + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g2 <- ggplot(occurences, aes(KO, N, fill = condition))  + geom_bar(stat = "identity", position = "dodge") + xlab("KOs") + ylab("number of occurrences in the samples") + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+grid.arrange(g1, g2)
+
+#boxplot of variances of MELP for all selected KOs among all samples
+ggplot(variances_dt, aes(as.factor(sample), st_dev, fill = condition)) + geom_boxplot() + xlab("samples") + ylab("standard deviation of MELP values between KOs") + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+
+
+
 
 
 
@@ -99,10 +148,9 @@ ggplot(dt, aes(dt$HD17)) + geom_density() + coord_cartesian(xlim = c(0,20))  #ka
 ```
 
 
-
 Priprema podataka:
 ```{r}
-dt <- data.table(genes = getKO(codonsInSamples2), melp[, 2:ncol(melp)])
+dt <- data.table(genes = getKO(codonsInSamples3), melp[, 2:ncol(melp)])
 dt <- dt[, lapply(.SD, median), .SDcols = 2:ncol(dt), by = genes]
 dt <- dt[, lapply(.SD, round), .SDcols = 2:ncol(dt), by = genes]
 dt <- as.data.frame(dt)
@@ -110,8 +158,6 @@ gene_names <- dt$genes
 dt <- dt[, 2:ncol(dt)]
 row.names(dt) <- gene_names
 ```
-
-
 
 DESeq:
 ```{r}
@@ -174,13 +220,13 @@ plotPCA(rlmean, intgroup = "sample")
 ```
 
 ```{r}
-rlog_values <- t(rlog(counts(dataset)))
+rlog_values <- t(rlog(counts(dataset), fitType = "mean"))
 colnames(rlog_values) <- dt$genes
 PCA <- prcomp(rlog_values, scale. = TRUE)
 ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1)), labels = row.names(PCA$x)) + theme_classic()
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
 
 PCA_nofiltering <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
+PCA_nofiltering
 ```
 
 DESeq:
@@ -222,6 +268,46 @@ pathwayEnrich <- gage(data.frame(row.names=rownames(res)[res$pvalue < 0.1],res$l
 kegg.sig <- sigGeneSet(pathwayEnrich)
 kegg.sig
 ```
+
+
+
+
+Logistic regression:
+```{r}
+logreg <- copy(melp)[, 2:ncol(melp)]
+KO_names <- getKO(codonsInSamples3)
+sample_names <- colnames(logreg)
+logreg$KO <- KO_names
+logreg <- logreg[, lapply(.SD, median), .SDcols = 1:(ncol(logreg)-1), by = KO]
+KO_names <- logreg$KO
+logreg <- as.data.table(t(logreg[, 2:ncol(logreg)]))
+colnames(logreg) <- KO_names
+
+#logreg$sample <- sample_names
+logreg[, condition := substr(sample_names, 1, 1)]
+logreg$condition[logreg$condition == "H"] <- 1
+logreg$condition[logreg$condition == "L"] <- 0
+
+summary(glm(condition ~ ., data = lapply(logreg, as.numeric), family = binomial))
+
+
+
+#povecaj threshold za broj ponavljanja KO (vise od 5)
+#napravi wilcoxonov test 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
