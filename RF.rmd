@@ -1,0 +1,365 @@
+---
+title: "nj"
+output: html_document
+---
+
+```{r}
+library("Biostrings")
+library("Biobase")
+library("dplyr")
+library("plyr")
+library("stringr")
+library("coRdon")
+library("randomForest")
+library("Boruta")
+library("RRF")
+library("ipred")
+library("gage")
+library("ggplot2")
+library("corrplot")
+library("data.table")
+```
+
+
+######
+
+Priprema uzoraka:
+```{}
+my_fasta_file_folder <- "C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\60uzoraka"
+uzorci <- readSet(my_fasta_file_folder, prepend.filenames = T)
+uzorci <- codonTable(uzorci)
+```
+
+```{}
+condition <- vector()
+sample_names <- vector()
+ct_set <- list()
+for (name in unique(str_extract(getID(uzorci), "[HL]D\\d+"))) {
+  sample <- subset(uzorci, str_extract(getID(uzorci), "[HL]D\\d+") == name)
+  melp <- MELP(sample, ribosomal = TRUE)
+  ct <- crossTab(getKO(sample), as.numeric(melp), threshold = 1L)
+  condition <- c(condition, rep(substr(getID(sample[1]), 1, 1), nrow(contable(ct))))
+  sample_names <- c(sample_names, rep(str_extract(getID(sample)[1], "[HL]D\\d+"), nrow(contable(ct))))
+  ct_set <- append(ct_set, ct)
+}
+```
+
+```{}
+all_enr <- lapply(ct_set, enrichment)
+all_enr_data <- lapply((all_enr), pData)
+```
+
+```{}
+samples <- do.call("rbind", all_enr_data)
+samples$samples <- sample_names
+samples$condition <- condition
+```
+
+```{}
+saveRDS(samples, "C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\60samples.rds")
+```
+
+#####
+
+
+
+
+```{r}
+samples <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\60samples.rds")
+```
+
+
+Training set:
+```{r}
+#promijeni ovisno o broju uzoraka   
+HDs <- unique(samples$samples)[which(substr(unique(samples$samples), 1, 1) == "H")]
+HDtrain_samples <- HDs[sample(1:30, 30 * 0.8)]
+HDtrain <- samples[samples$samples %in% HDtrain_samples, ]
+
+LDs <- unique(samples$samples)[which(substr(unique(samples$samples), 1, 1) == "L")]
+LDtrain_samples <- LDs[sample(1:30, 30 * 0.8)]
+LDtrain <- samples[samples$samples %in% LDtrain_samples, ]
+
+
+train <- rbind(HDtrain, LDtrain)
+```
+
+Test set:
+```{r}
+HDtest_samples <- HDs[!(HDs %in% HDtrain_samples)]
+HDtest <- samples[samples$samples %in% HDtest_samples, ]
+
+LDtest_samples <- LDs[!(LDs %in% LDtrain_samples)]
+LDtest <- samples[samples$samples %in% LDtest_samples, ]
+
+test <- rbind(HDtest, LDtest)
+```
+
+
+
+Random Forest Classification
+```{r}
+#training set:
+train_gt1 <- which(train$gt_1 > 0)
+
+trainSet <- train[train_gt1, 2:8]
+trainClasses <- factor(samples$condition[train_gt1])
+
+#test set:
+test_gt1 <- which(test$gt_1 > 0)
+
+testSet <- test[test_gt1, 2:8]
+testClasses <- factor(samples$condition[test_gt1])
+```
+
+
+
+Kada probam isfiltrirati:
+
+Random Forest Classification
+```{r}
+#training set:
+train_gt1 <- which(train$gt_1 > 0 & train$pvals < 0.05)
+
+trainSet <- train[train_gt1, 2:8]
+trainClasses <- factor(train$condition[train_gt1])
+
+#test set:
+test_gt1 <- which(test$gt_1 > 0 & test$pvals < 0.05)
+
+testSet <- test[test_gt1, 2:8]
+testClasses <- factor(test$condition[test_gt1])
+```
+
+
+
+```{r}
+getImpRRF <- function(x, y, ...) {
+rf <- RRF(x, y, importance = TRUE, keep.forest = FALSE, ntree = 20, flagReg = 1)  #1000
+imp <- rf$importance[, 1]
+imp/max(imp)
+}
+```
+
+```{r}
+bo <- Boruta(trainSet, trainClasses, maxRuns = 20, getImp = getImpRRF)   #200
+relevantKOs <- names(bo$finalDecision[bo$finalDecision %in% c("Tentative", "Confirmed")])
+```
+
+
+```{r}
+realTrainingset <- trainSet[, relevantKOs]
+rrf <- RRF(trainClasses ~ ., data = realTrainingset, ntree = 10, importance = TRUE, localImp = TRUE,
+proximity = TRUE, replace = FALSE) #ntree = 2000
+```
+
+```{r}
+rrf.pred <- predict(rrf, testSet, proximity = TRUE)
+err <- mean(rrf.pred$predicted!=testClasses)
+err
+```
+
+
+
+
+
+
+
+
+
+
+
+#staro 
+
+
+
+
+
+
+
+
+
+
+
+
+
+Prediction of Expression Levels
+```{r}
+uzorci <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\smp\\60samples.rds")
+```
+
+```{r}
+condition <- str_extract(colnames(uzorci)[2:ncol(uzorci)], "[HL]D")
+all_samples <- uzorci[, 2:ncol(uzorci)]
+```
+
+Enrichment Analysis
+For a single sample, we first create a contingency table summarising counts 
+of genes annotated to each KO category among all the genes in sample, 
+and among those predicted to be highly expressed. We do this using 
+`crossTab()` function, giving it a character vector of genes' annotations, 
+and a numeric vector of their respective MELP values, and specifying that 
+a subset of highly expressed reference genes should contain those genes 
+that have MELP value grater than 1 (this is default value of threshold). 
+```{r}
+ct.fun <- function(sample){
+  ct <- crossTab(uzorci$genes, sample, threshold = 1L)
+  return(ct)
+}
+
+all_ct <- as.data.table(t(data.table(apply(all_samples, 2, ct.fun))))
+```
+
+```{r}
+all_enr <- lapply(unlist(all_ct), enrichment)   #tu jos dodaj pmethod (def prvo kao funkciju)
+all_enr_data <- lapply((all_enr), pData)
+```
+
+```{r}
+samples <- do.call("rbind", all_enr_data)
+sample_names <- rep(colnames(all_samples), each = nrow(all_samples))
+KO_names <- uzorci$genes
+rownames(samples) <- paste(sample_names, KO_names, sep = "-")
+```
+
+
+
+
+
+Training set:
+```{r}
+#promijeni ovisno o broju uzoraka   
+HDs <- unique(sample_names)[which(substr(unique(sample_names), 1, 1) == "H")]
+HDtrain_samples <- HDs[sample(1:30, 30 * 0.8)]
+HDtrain <- samples[str_extract(rownames(samples), "HD\\d+") %in% HDtrain_samples, ]
+
+LDs <- unique(sample_names)[which(substr(unique(sample_names), 1, 1) == "L")]
+LDtrain_samples <- LDs[sample(1:30, 30 * 0.8)]
+LDtrain <- samples[str_extract(rownames(samples), "LD\\d+") %in% LDtrain_samples, ]
+
+
+train <- rbind(HDtrain, LDtrain)
+```
+
+Test set:
+```{r}
+HDtest_samples <- HDs[!(HDs %in% HDtrain_samples)]
+HDtest <- samples[str_extract(rownames(samples), "HD\\d+") %in% HDtest_samples, ]
+
+LDtest_samples <- LDs[!(LDs %in% LDtrain_samples)]
+LDtest <- samples[str_extract(rownames(samples), "LD\\d+") %in% LDtest_samples, ]
+
+test <- rbind(HDtest, LDtest)
+```
+
+
+
+
+
+Random Forest Classification
+```{r}
+#training set:
+train_gt1 <- which(train$gt_1 > 0)
+
+trainSet <- train[train_gt1, 2:8]
+trainClasses <- factor(substr(rownames(train[train_gt1, ]), 1, 1))
+
+#test set:
+test_gt1 <- which(test$gt_1 > 0)
+
+testSet <- test[test_gt1, 2:8]
+testClasses <- factor(substr(rownames(train[test_gt1, ]), 1, 1))
+```
+
+
+
+```{r}
+getImpRRF <- function(x, y, ...) {
+rf <- RRF(x, y, importance = TRUE, keep.forest = FALSE, ntree = 20, flagReg = 1)  #1000
+imp <- rf$importance[, 1]
+imp/max(imp)
+}
+```
+
+```{r}
+bo <- Boruta(trainSet, trainClasses, maxRuns = 20, getImp = getImpRRF)   #200
+relevantKOs <- names(bo$finalDecision[bo$finalDecision %in% c("Tentative", "Confirmed")])
+```
+
+
+```{r}
+realTrainingset <- trainSet[, relevantKOs]
+rrf <- RRF(trainClasses ~ ., data = realTrainingset, ntree = 10, importance = TRUE, localImp = TRUE,
+proximity = TRUE, replace = FALSE) #ntree = 2000
+```
+
+```{r}
+rrf.pred <- predict(rrf, testSet, proximity = TRUE)
+err <- mean(rrf.pred$predicted!=testClasses)
+err
+```
+
+
+
+
+
+
+
+```{r}
+which((all_train_enr[[3]]$gt_1 > 1) == TRUE)
+nj <- all_train_enr[[1]][sample(1:nrow(all_train_enr[[1]]), 20) ,]
+mj <- all_test_enr[[1]][sample(1:nrow(all_test_enr[[1]]), 20) ,]
+#nj$condition <- c(rep("HD", nrow(nj)/2), rep("LD", nrow(nj)/2)) 
+nj$condition <- sample(c("HD", "LD"), 20, replace = TRUE) 
+mj$condition <- sample(c("HD", "LD"), 20, replace = TRUE) 
+#mj$condition <- c(rep("HD", nrow(nj)/2), rep("LD", nrow(nj)/2)) 
+```
+
+
+
+Random Forest Classification
+```{r}
+#training set:
+train_gt1 <- which(nj$gt_1 > 0)
+
+trainSet <- nj[train_gt1, 2:8]
+trainClasses <- factor(nj$condition[train_gt1])
+
+#test set:
+test_gt1 <- which(mj$gt_1 > 0)
+
+testSet <- mj[test_gt1, 2:8]
+testClasses <- factor(mj$condition[test_gt1])
+```
+
+
+```{r}
+getImpRRF <- function(x, y, ...) {
+rf <- RRF(x, y, importance = TRUE, keep.forest = FALSE, ntree = 10, flagReg = 1)  #1000
+imp <- rf$importance[, 1]
+imp/max(imp)
+}
+```
+
+```{r}
+bo <- Boruta(trainSet, trainClasses, maxRuns = 20, getImp = getImpRRF)   #200
+relevantKOs <- names(bo$finalDecision[bo$finalDecision %in% c("Tentative", "Confirmed")])
+```
+
+
+```{r}
+realTrainingset <- trainSet[, relevantKOs]
+rrf <- RRF(trainClasses ~ ., data = realTrainingset, ntree = 500, importance = TRUE, localImp = TRUE,
+proximity = TRUE, replace = FALSE) #ntree = 2000
+```
+
+```{r}
+rrf.pred <- predict(rrf, testSet, proximity = TRUE)
+err <- mean(rrf.pred$predicted!=testClasses)
+err
+```
+
+
+
+
+
