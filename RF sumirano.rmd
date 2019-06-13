@@ -1,0 +1,361 @@
+---
+title: "RF sumirano"
+output: html_document
+---
+```{r}
+library("Biostrings")
+library("Biobase")
+library("dplyr")
+library("plyr")
+library("stringr")
+library("coRdon")
+library("randomForest")
+library("Boruta")
+library("RRF")
+library("ipred")
+library("gage")
+library("ggplot2")
+library("corrplot")
+library("data.table")
+library("pheatmap")
+```
+
+
+
+```{r}
+samples <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\all_samples.rds")
+```
+
+
+Svi uzorci kao trening set:
+```{r}
+sampleSet <- samples[samples$gt_1 > 0, c("all", "gt_1", "enrich", "A", "samples", "category")]
+sampleSet <- melt(sampleSet, id.var = c("samples", "category"))
+sampleSet$colnames <- paste(sampleSet$category, sampleSet$variable, sep = "_")
+sampleSet <- sampleSet[, c(1, 4, 5)]
+
+sample_names <- unique(sampleSet$samples)
+condition <- factor(substr(sample_names, 1, 1))
+
+sampleSet <- dcast(sampleSet, samples ~ colnames, fill = 0)
+sampleSet$condition <- condition
+rownames(sampleSet) <- sample_names
+sampleSet <- sampleSet[, -1]
+
+#sampleSet <- sampleSet[, order(apply(sampleSet, 2, sd), decreasing = TRUE)[1:5000]]
+```
+
+```{r}
+random_forest <- RRF(condition ~ ., data = sampleSet, ntree = 1500, importance = TRUE, localImp = TRUE, proximity = TRUE, replace = TRUE, mtry = 1500)
+
+pheatmap(random_forest$proximity, cellheight = 4, cellwidth = 4, fontsize = 4)
+pheatmap(random_forest$proximity, cellheight = 6, cellwidth = 6, fontsize = 6)
+#pheatmap(random_forest$proximity, cellheight = 10, cellwidth = 10)
+
+plot(random_forest)
+```
+
+
+
+
+
+```{r}
+rf10 <- RRF(condition ~ ., data = sampleSet, ntree = 10000, importance = TRUE, localImp = TRUE, proximity = TRUE, replace = TRUE, mtry = 2500)
+random_forest <- RRF(condition ~ ., data = sampleSet, ntree = 1500, importance = TRUE, localImp = TRUE, proximity = TRUE, replace = TRUE, mtry = 2500)
+
+#pheatmap(random_forest$proximity, cellheight = 4, cellwidth = 4, fontsize = 4)
+#pheatmap(random_forest$proximity, cellheight = 6, cellwidth = 6, fontsize = 6)
+#pheatmap(random_forest$proximity, cellheight = 10, cellwidth = 10)
+
+plot(random_forest)
+
+pheatmap(random_forest$proximity, cellheight = 4, cellwidth = 4, fontsize = 4)
+
+```
+
+
+
+
+
+
+
+
+MSE plot:
+```{}
+error_rate <- function(n){
+  return(plot(random_forest)[n])
+}
+
+error <- data.table(ntrees = 1:2000)
+error[, ER := error_rate(ntrees), by = ntrees]
+
+error
+```
+
+
+
+
+Importance:
+  -prouci sta je tocno taj importance, kako se mjeri i moze li se sta zanimljivo iz ovog izvuci
+```{r}
+#random_forest$importance[which((random_forest$importance != 0) == TRUE, arr.ind = T), ]
+rnames <- rownames(which((random_forest$importance != 0) == TRUE, arr.ind = T))
+rnames <- unlist(str_split(rnames, "_"))
+importantKOs <- unique(grep("^K\\d+$", rnames, value = TRUE))
+```
+
+```{r}
+library("KEGGREST")
+#which(unique(importantKOs) %in% c("K09687"))
+KOs <- data.table(KO = importantKOs[-62])
+KOs[, name := (keggGet(KO)[[1]])$NAME, by = 1:nrow(KOs)]
+KOs[, definition := (keggGet(KO)[[1]])$DEFINITION, by = 1:nrow(KOs)]
+
+#saveRDS(KOs, "C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\KO_anotations.rds")
+```
+
+
+
+
+
+
+Metabolic Module Identification
+
+Preparation of reference pathways. We will be using the KO-annotated metabolic pathways.
+```{r}
+path.set <- kegg.gsets("ko")
+ko.gs <- path.set$kg.sets
+```
+
+Extraction of fold-change (M) values for the samples.
+```{r}
+gage_dt <- samples[, c("category", "M", "samples")]
+gage_dt <- melt(gage_dt, id.var = c("samples", "category"))
+gage_dt <- gage_dt[, -3]
+gage_dt <- dcast(gage_dt, category ~ samples, fill = 0)
+gage_dt <- as.data.frame(gage_dt)
+rownames(gage_dt) <- gage_dt$category
+gage_dt <- gage_dt[, -1]
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = 1:80, compare = "unpaired")
+kegg.sig <- sigGeneSet(pathwayEnrich)
+```
+
+
+Which genes are up- or downregulated in LD samples compred to HD samples:
+-upregulated:
+```{r}
+upregulated <- data.frame(kegg.sig$greater)
+upregulated_pathways <- rownames(upregulated)
+```
+
+-downregulated:
+```{r}
+downregulated <- data.frame(kegg.sig$less)
+downregulated_pathways <- rownames(downregulated)
+```
+
+
+
+
+
+
+
+
+
+Clusters:
+```{r}
+cl1 <- c("LD49", "LD41", "LD48")
+cl1 <- which(colnames(gage_dt) %in% cl1)
+
+cl2 <- c("HD74", "HD9", "HD56", "HD50")
+cl2 <- which(colnames(gage_dt) %in% cl2)
+
+cl3 <- c("HD25", "HD14", "HD42", "HD46", "HD64")
+cl3 <- which(colnames(gage_dt) %in% cl3)
+
+cl4 <- c("HD16", "HD22", "HD39", "HD23", "HD65")
+cl4 <- which(colnames(gage_dt) %in% cl4)
+
+cl5 <- c("LD49", "LD41", "LD48", "LD12", "LD7", "LD29", "LD27", "LD19", "LD13", "LD18", "LD15", "LD42", "HD3", "HD47")
+cl5 <- which(colnames(gage_dt) %in% cl5)
+
+  
+```
+
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl5, compare = "unpaired")
+kegg.sig <- sigGeneSet(pathwayEnrich)
+```
+
+
+Which genes are up- or downregulated in LD samples compred to HD samples:
+-upregulated:
+```{r}
+upregulated <- data.frame(kegg.sig$greater)
+upregulated_pathways <- rownames(upregulated)
+upregulated_pathways
+```
+
+-downregulated:
+```{r}
+downregulated <- data.frame(kegg.sig$less)
+downregulated_pathways <- rownames(downregulated)
+downregulated_pathways
+```
+
+
+
+
+
+
+
+PCA plots:
+```{r}
+library(ggbiplot)
+PCA <- prcomp(random_forest$proximity, scale. = TRUE)
+
+PCAplot <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(random_forest$proximity), 1, 1))) + theme_classic()
+PCAplot
+
+clusters <- kmeans(random_forest$proximity, 2)
+cl1 <- names(which(clusters$cluster == 1))
+cl2 <- names(which(clusters$cluster == 2))
+cl1 <- which(colnames(gage_dt) %in% cl1)
+```
+
+
+Metabolic Module Identification
+
+Preparation of reference pathways. We will be using the KO-annotated metabolic pathways.
+```{r}
+path.set <- kegg.gsets("ko")
+ko.gs <- path.set$kg.sets
+```
+
+Extraction of fold-change (M) values for the samples.
+```{r}
+gage_dt <- samples[, c("category", "M", "samples")]
+gage_dt <- melt(gage_dt, id.var = c("samples", "category"))
+gage_dt <- gage_dt[, -3]
+gage_dt <- dcast(gage_dt, category ~ samples, fill = 0)
+gage_dt <- as.data.frame(gage_dt)
+rownames(gage_dt) <- gage_dt$category
+gage_dt <- gage_dt[, -1]
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl1, compare = "unpaired")
+kegg.sig <- sigGeneSet(pathwayEnrich)
+```
+
+
+Which genes are up- or downregulated in LD samples compred to HD samples:
+-upregulated:
+```{r}
+upregulated <- data.frame(kegg.sig$greater)
+upregulated_pathways <- rownames(upregulated)
+upregulated_pathways
+```
+
+-downregulated:
+```{r}
+downregulated <- data.frame(kegg.sig$less)
+downregulated_pathways <- rownames(downregulated)
+downregulated_pathways
+```
+
+
+
+
+
+
+
+
+
+PCA plots:
+```{r}
+library(ggbiplot)
+PCA <- prcomp(random_forest$proximity, scale. = TRUE)
+
+PCAplot <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(random_forest$proximity), 1, 1))) + theme_classic()
+PCAplot
+
+clusters <- kmeans(random_forest$proximity, 4)
+cl1 <- names(which(clusters$cluster == 1))
+cl1 <- which(colnames(gage_dt) %in% cl1)
+
+cl2 <- names(which(clusters$cluster == 2))
+cl2 <- which(colnames(gage_dt) %in% cl2)
+
+cl3 <- names(which(clusters$cluster == 3))
+cl3 <- which(colnames(gage_dt) %in% cl3)
+
+cl4 <- names(which(clusters$cluster == 4))
+cl4 <- which(colnames(gage_dt) %in% cl4)
+
+```
+
+
+Metabolic Module Identification
+
+Preparation of reference pathways. We will be using the KO-annotated metabolic pathways.
+```{r}
+path.set <- kegg.gsets("ko")
+ko.gs <- path.set$kg.sets
+```
+
+Extraction of fold-change (M) values for the samples.
+```{r}
+gage_dt <- samples[, c("category", "M", "samples")]
+gage_dt <- melt(gage_dt, id.var = c("samples", "category"))
+gage_dt <- gage_dt[, -3]
+gage_dt <- dcast(gage_dt, category ~ samples, fill = 0)
+gage_dt <- as.data.frame(gage_dt)
+rownames(gage_dt) <- gage_dt$category
+gage_dt <- gage_dt[, -1]
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl4, compare = "unpaired")
+kegg.sig <- sigGeneSet(pathwayEnrich)
+```
+
+
+Which genes are up- or downregulated in LD samples compred to HD samples:
+-upregulated:
+```{r}
+upregulated <- data.frame(kegg.sig$greater)
+upregulated_pathways <- rownames(upregulated)
+upregulated_pathways
+```
+
+-downregulated:
+```{r}
+downregulated <- data.frame(kegg.sig$less)
+downregulated_pathways <- rownames(downregulated)
+downregulated_pathways
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
