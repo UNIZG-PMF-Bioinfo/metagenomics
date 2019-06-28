@@ -1,0 +1,141 @@
+---
+title: "train/test"
+output: html_document
+---
+
+```{r}
+samples <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\all_samples.rds")
+set.seed(1704)
+```
+
+```{r}
+sampleSet <- samples[samples$gt_1 > 0, c("all", "gt_1", "enrich", "A", "samples", "category")]
+sampleSet <- melt(sampleSet, id.var = c("samples", "category"))
+sampleSet$colnames <- paste(sampleSet$category, sampleSet$variable, sep = "_")
+sampleSet <- sampleSet[, c(1, 4, 5)]
+
+sample_names <- unique(sampleSet$samples)
+condition <- factor(substr(sample_names, 1, 1))
+
+sampleSet <- dcast(sampleSet, samples ~ colnames, fill = 0)
+sampleSet$condition <- condition
+rownames(sampleSet) <- sample_names
+sampleSet <- sampleSet[, -1]
+
+#sampleSet <- sampleSet[, order(apply(sampleSet, 2, sd), decreasing = TRUE)[1:5000]]
+```
+
+```{r}
+healthy <- length(which(substr(rownames(sampleSet), 1, 1) == "H"))
+sick <- length(which(substr(rownames(sampleSet), 1, 1) == "L"))
+```
+
+
+Training set:
+```{r}
+HDs <- rownames(sampleSet)[which(substr(rownames(sampleSet), 1, 1) == "H")]
+HDtrain_samples <- HDs[sample(1:healthy, healthy * 0.8)]
+HDtrain <- sampleSet[rownames(sampleSet) %in% HDtrain_samples, ]
+
+LDs <- rownames(sampleSet)[which(substr(rownames(sampleSet), 1, 1) == "L")]
+LDtrain_samples <- LDs[sample(1:sick, sick * 0.8)]
+LDtrain <- sampleSet[rownames(sampleSet) %in% LDtrain_samples, ]
+
+train <- rbind(HDtrain, LDtrain)
+```
+
+Test set:
+```{r}
+HDtest_samples <- HDs[!(HDs %in% HDtrain_samples)]
+HDtest <- sampleSet[rownames(sampleSet) %in% HDtest_samples, ]
+
+LDtest_samples <- LDs[!(LDs %in% LDtrain_samples)]
+LDtest <- sampleSet[rownames(sampleSet) %in% LDtest_samples, ]
+
+test <- rbind(HDtest, LDtest)
+```
+
+
+
+####
+```{r}
+getImpRRF <- function(x, y, ...) {
+rf <- RRF(x, y, importance = TRUE, keep.forest = FALSE, ntree = 10, flagReg = 1)  #1000
+imp <- rf$importance[, 1]
+imp/max(imp)
+}
+```
+
+```{r}
+bo <- Boruta(train[, -ncol(train)], train$condition, maxRuns = 20, getImp = getImpRRF)   #200
+relevantKOs <- names(bo$finalDecision[bo$finalDecision %in% c("Tentative", "Confirmed")])
+
+?Boruta
+```
+####
+
+
+
+```{r}
+crossvalidaiton <- rrfcv(train[, -ncol(train)], train$condition, cv.fold = 5, step = 0.95)
+crossvalidaiton <- rrfcv(sampleSet[, -ncol(sampleSet)], sampleSet$condition, cv.fold = 5, step = 0.95)
+min(crossvalidaiton$error.cv)
+which.min(crossvalidaiton$error.cv)
+```
+
+
+```{r}
+rrf <- RRF(train[, -ncol(train)], train$condition, ntree = 10000, importance = TRUE, localImp = TRUE, proximity = TRUE, replace = TRUE, mtry = 8139)
+rrf2 <- RRF(train[, -ncol(train)], train$condition, ntree = 10000, importance = TRUE, localImp = TRUE, proximity = TRUE, replace = TRUE, mtry = 5399)
+varImpPlot(rrf, sort = TRUE)
+```
+
+```{r}
+rrf.pred <- predict(rrf, test[, -ncol(test)], proximity = TRUE)
+rrf.err <- mean(rrf.pred$predicted!=test$condition)
+rrf.err
+
+```
+
+
+
+
+
+
+
+
+Ranger:
+```{r}
+ranger <- ranger(condition ~ ., train, num.trees = 15000, mtry = 3400, probability = FALSE, replace = TRUE, oob.error = TRUE, classification = TRUE, write.forest = TRUE)
+```
+
+```{r}
+ranger.pred <- predict(ranger, test[, -ncol(test)])
+ranger.err <- mean(ranger.pred$predictions!=test$condition)
+ranger.err
+```
+
+```{r}
+library("spm")
+cv_rf <- rgcv(train[, -ncol(train)], train$condition, cv.fold = 5, mtry = 3400, num.trees = 15000, verbose = TRUE)
+100 - cv_rf$ccr
+
+
+cv_rf_all <- rgcv(sampleSet[, -ncol(sampleSet)], sampleSet$condition, cv.fold = 5, mtry = 3400, num.trees = 15000, verbose = TRUE)
+100 - cv_rf_all$ccr
+100 - cv_rf4$ccr
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
