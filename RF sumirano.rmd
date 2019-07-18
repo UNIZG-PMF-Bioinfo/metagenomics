@@ -28,7 +28,7 @@ library("ranger")
 
 ```{r}
 samples <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\all_samples.rds")
-set.seed(1704)
+#set.seed(1704)
 set.seed(78963)
 ```
 
@@ -57,140 +57,598 @@ sampleSet <- sampleSet[, -1]
 ```{r}
 random_forest <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\presentation\\random forests\\random_forest.rds")
 RRF_RF <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\presentation\\random forests\\RRF.rds")
-rf_ranger <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\presentation\\random forests\\ranger.rds")
+ranger_rf <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\presentation\\random forests\\ranger.rds")
 rfsrc_rf <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\presentation\\random forests\\rfSRC.rds")
 ```
 
+Heatmaps:
+```{r}
+pheatmap(RRF_RF$proximity, cellheight = 4, cellwidth = 4, fontsize = 4)
+
+prox <- extract_proximity(ranger_rf, sampleSet)
+pheatmap(prox, cellheight = 4, cellwidth = 4, fontsize = 4, labels_row = rownames(sampleSet), labels_col = rownames(sampleSet))
+```
 
 
 
 
 
 
+
+####
+
+Usporedba kako se razdvajaju kada gledam samo KO koji su u svim uzorcima:
+ - kako bih bila sigurna da se razdvajanje ne temlji samo na genima kojih ima samo u jednoj grupi
+```{r}
+ranger_cl <- kmeans(prox, 3)
+names(ranger_cl$cluster) <- rownames(sampleSet)
+ranger_cl$cluster
+table(ranger_cl$cluster)
+
+cl1 <- names(ranger_cl$cluster[ranger_cl$cluster == 2])
+cl2 <- names(ranger_cl$cluster[ranger_cl$cluster == 3])
+
+sample_KOs <- samples[, c(1, 9)]
+H_cluster <- sample_KOs[sample_KOs$samples %in% cl1, ]
+L_cluster <- sample_KOs[sample_KOs$samples %in% cl2, ]
+
+same_KOs <- H_cluster$category %in% L_cluster$category
+table(same_KOs)
+hhh <- H_cluster$category[same_KOs == FALSE]
+
+same_KOs <- L_cluster$category %in% H_cluster$category
+table(same_KOs)
+lll <- L_cluster$category[same_KOs == FALSE]
+
+missing_KOs <- c(hhh, lll)
+```
 
 
 ```{r}
-PCA <- prcomp(RRF_RF$proximity, scale. = TRUE)
+samples <- samples[!samples$category %in% missing_KOs, ]
+```
 
-PCAplot <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(RRF_RF$proximity), 1, 1))) + theme_classic()
-PCAplot
+Svi uzorci kao trening set:
+```{r}
+sampleSet <- samples[samples$gt_1 > 0, c("all", "gt_1", "enrich", "A", "samples", "category")]
+sampleSet <- melt(sampleSet, id.var = c("samples", "category"))
+sampleSet$colnames <- paste(sampleSet$category, sampleSet$variable, sep = "_")
+sampleSet <- sampleSet[, c(1, 4, 5)]
+
+sample_names <- unique(sampleSet$samples)
+condition <- factor(substr(sample_names, 1, 1))
+
+sampleSet <- dcast(sampleSet, samples ~ colnames, fill = 0)
+sampleSet$condition <- condition
+rownames(sampleSet) <- sample_names
+sampleSet <- sampleSet[, -1]
+
+#sampleSet <- sampleSet[, order(apply(sampleSet, 2, sd), decreasing = TRUE)[1:5000]]
+```
+
+```{r}
+rf_ranger <- ranger(condition ~ ., sampleSet, num.trees = 15000, mtry = 3400, probability = FALSE, replace = TRUE, oob.error = TRUE, classification = TRUE, importance = "impurity")
 
 prox <- extract_proximity(rf_ranger, sampleSet)
-PCA2 <- prcomp(prox, scale. = TRUE)
 
-PCAplot2 <- ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(RRF_RF$proximity), 1, 1))) + theme_classic()
-PCAplot2
-
-testSamples <- rownames(test)
-
-grouping <- data.table(samples = rownames(RRF_RF$proximity), group = "training")
-grouping$group[grouping$samples %in% testSamples] <- "test"
-grouping$condition <- factor(substr(grouping$samples, 1, 1))
-grouping$all <- paste(grouping$group, grouping$condition, sep = " ")
-
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grouping$all)) + theme_classic() + ggtitle("RRF") 
-ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(grouping$all)) + theme_classic() + ggtitle("ranger") 
-
-#ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(grouping$condition)) + theme_classic() + ggtitle("ranger") + geom_point(aes(shape = factor(grouping$group), color = factor(grouping$condition)))
+pheatmap(prox, cellheight = 4, cellwidth = 4, fontsize = 4, labels_row = rownames(sampleSet), labels_col = rownames(sampleSet))
+#saveRDS(rf_ranger, "C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\presentation\\random forests\\ranger.rds")
 ```
 
 
 
+```{r}
+samples <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\samples\\all_samples.rds")
+uzorci <- data.table(sample = samples$samples, KO = samples$category)
+KO_dist <- as.data.table(table(uzorci))
+KO_dist2 <- KO_dist[N>0,.N,.(KO)]
+#KO_dist2[order(-N)]
+KOs_in_all <- KO_dist2$KO[KO_dist2$N == 161]
+```
+
 
 ```{r}
-PCA <- prcomp(RRF_RF$proximity, scale. = TRUE)
+samples <- samples[samples$category %in% KOs_in_all, ]
+```
 
-PCAplot <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(RRF_RF$proximity), 1, 1))) + theme_classic()
-PCAplot
+Svi uzorci kao trening set:
+```{r}
+sampleSet <- samples[samples$gt_1 > 0, c("all", "gt_1", "enrich", "A", "samples", "category")]
+sampleSet <- melt(sampleSet, id.var = c("samples", "category"))
+sampleSet$colnames <- paste(sampleSet$category, sampleSet$variable, sep = "_")
+sampleSet <- sampleSet[, c(1, 4, 5)]
+
+sample_names <- unique(sampleSet$samples)
+condition <- factor(substr(sample_names, 1, 1))
+
+sampleSet <- dcast(sampleSet, samples ~ colnames, fill = 0)
+sampleSet$condition <- condition
+rownames(sampleSet) <- sample_names
+sampleSet <- sampleSet[, -1]
+
+#sampleSet <- sampleSet[, order(apply(sampleSet, 2, sd), decreasing = TRUE)[1:5000]]
+
+sampleSet[1:5,1:5]
+```
+
+```{r}
+rf_ranger <- ranger(condition ~ ., sampleSet, num.trees = 15000, probability = FALSE, replace = TRUE, oob.error = TRUE, classification = TRUE, importance = "impurity")
 
 prox <- extract_proximity(rf_ranger, sampleSet)
-PCA2 <- prcomp(prox, scale. = TRUE)
 
-PCAplot2 <- ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(RRF_RF$proximity), 1, 1))) + theme_classic()
-PCAplot2
-
-testSamples <- rownames(test)
-
-grouping <- data.table(samples = rownames(RRF_RF$proximity), group = "training")
-grouping$group[grouping$samples %in% testSamples] <- "test"
-grouping$condition <- factor(substr(grouping$samples, 1, 1))
-grouping$all <- paste(grouping$group, grouping$condition, sep = " ")
-
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grouping$all)) + theme_classic() + ggtitle("RRF") 
-ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(grouping$all)) + theme_classic() + ggtitle("ranger") 
-
-#ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(grouping$condition)) + theme_classic() + ggtitle("ranger") + geom_point(aes(shape = factor(grouping$group), color = factor(grouping$condition)))
+pheatmap(prox, cellheight = 4, cellwidth = 4, fontsize = 4, labels_row = rownames(sampleSet), labels_col = rownames(sampleSet))
 ```
 
 
-Kad izbacim LD klaster:
-```{r}
-clustering <- kmeans(RRF_RF$proximity, 3)
-grouping$cluster <- clustering$cluster
-ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(grouping$cluster)) + theme_classic() + ggtitle("RRF") 
 
-filtered_samples <- grouping$samples[grouping$cluster == 3 | grouping$cluster == 2]
-filtered <- sampleSet[rownames(sampleSet) %in% filtered_samples, ]
+####
+
+
+
+
+
+- hierarchical clustering:
+
+```{r}
+hierarchical <- hclust(dist(RRF_RF$proximity), method = "ward.D")
+
+plot(hierarchical) # display dendogram
+groups <- cutree(hierarchical, k = 3) # cut tree into 5 clusters
+# draw dendogram with red borders around the 5 clusters 
+rect.hclust(hierarchical, k = 3, border = "red")
 ```
 
-```{r}
-RRF_RF_filtered <- RRF(filtered[, -ncol(filtered)], filtered$condition, ntree = 15000, importance = TRUE, localImp = TRUE, proximity = TRUE, replace = TRUE, mtry = 2250)
 
-plot(RRF_RF_filtered$err.rate[, 1], type = "l")
+Usporedba s ostalim podacima:
+```{r warning=FALSE}
+library(readxl)
+metadata <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\metadata.xlsx", col_types = c("text", "text", "numeric", "numeric", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "numeric", "numeric", "text"))
 
-pheatmap(RRF_RF_filtered$proximity, cellheight = 4, cellwidth = 4, fontsize = 4)
+metadata$`Sample ID` <- paste(str_extract(metadata$`Sample ID`, "[HL]D"), str_extract(metadata$`Sample ID`, "\\d+"), sep = "")
+metadata <- metadata[metadata$`Sample ID` %in% data_info$samples, ]
 ```
 
 ```{r}
-rf_ranger_filtered <- ranger(condition ~ ., filtered, num.trees = 15000, mtry = 3400, probability = FALSE, replace = TRUE, oob.error = TRUE, classification = TRUE, importance = "impurity")
-rf_ranger_filtered$prediction.error
+data_info <- data.table(samples = rownames(sampleSet), condition = substr(rownames(sampleSet), 1, 1))
 
-prox2 <- extract_proximity(rf_ranger_filtered, filtered)
+data_info$cluster <- 1
+data_info$cluster[data_info$samples %in% names(groups)[groups == 2]] <- 2
+data_info$cluster[data_info$samples %in% names(groups)[groups == 3]] <- 3
+data_info$cluster[data_info$samples %in% names(groups)[groups == 4]] <- 4
+data_info$cluster[data_info$samples %in% names(groups)[groups == 5]] <- 5
+data_info$cluster[data_info$samples %in% names(groups)[groups == 6]] <- 6
+data_info$cluster[data_info$samples %in% names(groups)[groups == 7]] <- 7
+data_info$cluster[data_info$samples %in% names(groups)[groups == 8]] <- 8
+```
 
-pheatmap(prox2, cellheight = 4, cellwidth = 4, fontsize = 4, labels_row = rownames(filtered), labels_col = rownames(filtered))
+```{r}
+tablica <- copy(metadata)
+tablica$Gender[tablica$Gender == "female"] <- 1
+tablica$Gender[tablica$Gender == "male"] <- 0
+tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "Y"] <- 1
+tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "N"] <- 0
+tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "Y"] <- 1
+tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "N"] <- 0
+colnames(tablica)[colnames(tablica) == "Sample ID"] <- "samples"
+
+tablica <- tablica[, -c(7, 8, 12, 13, 14, 15, 16)]
+
+data_info <- merge(data_info, tablica, by = "samples")
+```
+
+```{r}
+library(MASS)
+lda(cluster ~ ., data_info[, -c(1, 2)])
+```
+
+```{r}
+#zapravo bih trebala gledati samo za bolesne jer me zanima na temelju cega se oni razdvajaju
+kruskal.test(data_info$`TB (umol/L)` ~ data_info$cluster)
+```
+
+Izgleda da se razdvajaju na temelju koncentracije bilirubina:
+```{r}
+bolesni <- data_info[condition == "L"]
+unique(bolesni$cluster)
+bolesni$cluster[bolesni$cluster == 3] <- 2
+bolesni$cluster <- factor(bolesni$cluster, 
+                          levels = c(1, 2))
+
+lda(cluster ~ ., bolesni[, -c(1, 2)])
+```
+
+```{r}
+kruskal.test(bolesni$`Alcohol related (Y or N)` ~ bolesni$cluster)
+kruskal.test(bolesni$`HBV related  (Y or N)` ~ bolesni$cluster)
+kruskal.test(bolesni$Gender ~ bolesni$cluster)
+kruskal.test(bolesni$Age ~ bolesni$cluster)
+kruskal.test(bolesni$`BMI (kg/m2)` ~ bolesni$cluster)
+kruskal.test(bolesni$`Crea (umol/L)` ~ bolesni$cluster)
+kruskal.test(bolesni$`Alb (g/L)` ~ bolesni$cluster)
+kruskal.test(bolesni$`TB (umol/L)` ~ bolesni$cluster)
 ```
 
 
 ```{r}
-PCA3 <- prcomp(RRF_RF_filtered$proximity, scale. = TRUE)
-
-PCAplot3 <- ggbiplot(PCA3, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(RRF_RF_filtered$proximity), 1, 1))) + theme_classic()
-PCAplot3
-
-PCA4 <- prcomp(prox2, scale. = TRUE)
-
-PCAplot4 <- ggbiplot(PCA4, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(RRF_RF_filtered$proximity), 1, 1))) + theme_classic()
-PCAplot4
+ggplot(bolesni, aes(bolesni$cluster, bolesni$`TB (umol/L)`)) + geom_boxplot()
+ggplot(bolesni, aes(`TB (umol/L)`, fill = cluster)) + geom_density(alpha = 0.5)
 ```
 
-
-
-
-
-
-
-
-
-
+```{r}
+pairwise.wilcox.test(bolesni$`TB (umol/L)`, bolesni$cluster, p.adjust.method = "BH")
+```
 
 
 
 ```{r}
-#prokuzi kako prikazati distribuciju varijabli
-variables <- c("all", "gt_1", "enrich", "A")
-var_all <- sampleSet[, grep("all", colnames(sampleSet))]
-nj <- mutate_all(var_all, mean)
+zdravi <- data_info[condition == "H"]
+zdravi <- zdravi[, -c(7, 8)]
+unique(zdravi$cluster)
+#zdravi$cluster[zdravi$cluster == 5] <- 1
+zdravi$cluster <- factor(zdravi$cluster, 
+                          levels = c(1, 2, 3, 4))
 
-var_all[1:5,1:5]
-
-
-samples[1:5,1:5]
-KO_count[1:5,1:5]
-KO_count <- copy(sampleSet)
-KO_count[which(KO_count != 0, arr.ind = T)] <- 1
-rowSums(as.data.frame(KO_count))
+lda(cluster ~ ., zdravi[, -c(1, 2)])
 ```
 
+```{r}
+kruskal.test(zdravi$Gender ~ zdravi$cluster)
+kruskal.test(zdravi$Age ~ zdravi$cluster)
+kruskal.test(zdravi$`BMI (kg/m2)` ~ zdravi$cluster)
+kruskal.test(zdravi$`Crea (umol/L)` ~ zdravi$cluster)
+kruskal.test(zdravi$`Alb (g/L)` ~ zdravi$cluster)
+kruskal.test(zdravi$`TB (umol/L)` ~ zdravi$cluster)
+```
+
+
+
+
+
+
+- kmeans clustering:
+
+Druge metode klasteriranja:
+```{r}
+clustering <- kmeans(RRF_RF$proximity, 2, nstart = 50)
+groups <- clustering$cluster
+```
+
+Usporedba s ostalim podacima:
+```{r warning=FALSE}
+library(readxl)
+metadata <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\metadata.xlsx", col_types = c("text", "text", "numeric", "numeric", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "numeric", "numeric", "text"))
+
+metadata$`Sample ID` <- paste(str_extract(metadata$`Sample ID`, "[HL]D"), str_extract(metadata$`Sample ID`, "\\d+"), sep = "")
+metadata <- metadata[metadata$`Sample ID` %in% data_info$samples, ]
+```
+
+```{r}
+data_info <- data.table(samples = rownames(sampleSet), condition = substr(rownames(sampleSet), 1, 1))
+
+data_info$cluster <- 1
+data_info$cluster[data_info$samples %in% names(groups)[groups == 2]] <- 2
+data_info$cluster[data_info$samples %in% names(groups)[groups == 3]] <- 3
+data_info$cluster[data_info$samples %in% names(groups)[groups == 4]] <- 4
+data_info$cluster[data_info$samples %in% names(groups)[groups == 5]] <- 5
+data_info$cluster[data_info$samples %in% names(groups)[groups == 6]] <- 6
+data_info$cluster[data_info$samples %in% names(groups)[groups == 7]] <- 7
+data_info$cluster[data_info$samples %in% names(groups)[groups == 8]] <- 8
+```
+
+```{r}
+tablica <- copy(metadata)
+tablica$Gender[tablica$Gender == "female"] <- 1
+tablica$Gender[tablica$Gender == "male"] <- 0
+tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "Y"] <- 1
+tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "N"] <- 0
+tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "Y"] <- 1
+tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "N"] <- 0
+colnames(tablica)[colnames(tablica) == "Sample ID"] <- "samples"
+
+tablica <- tablica[, -c(7, 8, 12, 13, 14, 15, 16)]
+
+data_info <- merge(data_info, tablica, by = "samples")
+```
+
+```{r}
+lda(cluster ~ ., data_info[, -c(1, 2)])
+```
+
+```{r}
+#zapravo bih trebala gledati samo za bolesne jer me zanima na temelju cega se oni razdvajaju
+kruskal.test(data_info$`TB (umol/L)` ~ data_info$cluster)
+```
+
+Izgleda da se razdvajaju na temelju koncentracije bilirubina:
+```{r}
+bolesni <- data_info[condition == "L"]
+unique(bolesni$cluster)
+bolesni$cluster[bolesni$cluster == 3] <- 1
+bolesni$cluster <- factor(bolesni$cluster, 
+                          levels = c(1, 2))
+
+lda(cluster ~ ., bolesni[, -c(1, 2)])
+```
+
+```{r}
+kruskal.test(bolesni$`Alcohol related (Y or N)` ~ bolesni$cluster)
+kruskal.test(bolesni$`HBV related  (Y or N)` ~ bolesni$cluster)
+kruskal.test(bolesni$Gender ~ bolesni$cluster)
+kruskal.test(bolesni$Age ~ bolesni$cluster)
+kruskal.test(bolesni$`BMI (kg/m2)` ~ bolesni$cluster)
+kruskal.test(bolesni$`Crea (umol/L)` ~ bolesni$cluster)
+kruskal.test(bolesni$`Alb (g/L)` ~ bolesni$cluster)
+kruskal.test(bolesni$`TB (umol/L)` ~ bolesni$cluster)
+```
+
+
+```{r}
+ggplot(bolesni, aes(bolesni$cluster, bolesni$`TB (umol/L)`)) + geom_boxplot()
+ggplot(bolesni, aes(`TB (umol/L)`, fill = cluster)) + geom_density(alpha = 0.5)
+```
+
+```{r}
+pairwise.wilcox.test(bolesni$`TB (umol/L)`, bolesni$cluster, p.adjust.method = "BH")
+```
+
+
+
+
+
+
+Cluster validation:
+```{r}
+library("clValid")
+intern <- clValid(RRF_RF$proximity, nClust = 3:8, clMethods = c("hierarchical", "kmeans"), method = "ward", validation = "intern")
+summary(intern)
+plot(intern)
+```
+
+```{r}
+stab <- clValid(RRF_RF$proximity, nClust = 3:8, clMethods = c("hierarchical", "kmeans"), method = "ward", validation = "stability")
+summary(stab)
+plot(stab)
+```
+
+```{r}
+optimalScores(intern)
+optimalScores(stab)
+```
+
+
+
+
+
+
+
+
+Klasteriranje:
+```{r}
+hierarchical <- hclust(dist(RRF_RF$proximity), method = "ward.D")
+
+plot(hierarchical) # display dendogram
+groups <- cutree(hierarchical, k = 4) # cut tree into 5 clusters
+# draw dendogram with red borders around the 5 clusters 
+rect.hclust(hierarchical, k = 4, border = "red")
+```
+
+```{r}
+data_info <- data.table(samples = rownames(sampleSet), condition = substr(rownames(sampleSet), 1, 1))
+
+data_info$cluster <- 1
+data_info$cluster[data_info$samples %in% names(groups)[groups == 2]] <- 2
+data_info$cluster[data_info$samples %in% names(groups)[groups == 3]] <- 3
+data_info$cluster[data_info$samples %in% names(groups)[groups == 4]] <- 4
+
+PCA <- prcomp(RRF_RF$proximity, scale. = TRUE)
+ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(data_info$cluster)) + theme_classic() + ggtitle("RRF") 
+```
+
+
+
+
+
+Metabolic Module Identification
+
+Preparation of reference pathways. We will be using the KO-annotated metabolic pathways.
+```{r}
+path.set <- kegg.gsets("ko")
+ko.gs <- path.set$kg.sets
+```
+
+Extraction of fold-change (M) values for the samples.
+```{r}
+gage_dt <- samples[, c("category", "M", "samples")]
+gage_dt <- melt(gage_dt, id.var = c("samples", "category"))
+gage_dt <- gage_dt[, -3]
+gage_dt <- dcast(gage_dt, category ~ samples, fill = 0)
+gage_dt <- as.data.frame(gage_dt)
+rownames(gage_dt) <- gage_dt$category
+gage_dt <- gage_dt[, -1]
+```
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = 1:80, compare = "unpaired")
+kegg.sig <- sigGeneSet(pathwayEnrich)
+```
+
+
+Which genes are up- or downregulated in LD samples compred to HD samples:
+-upregulated:
+```{r}
+upregulated <- data.frame(kegg.sig$greater)
+upregulated_pathways <- rownames(upregulated)
+
+KO <-  unlist(str_extract_all(upregulated_pathways, "ko[0-9]*"))
+pathways <- unlist(str_split(upregulated_pathways, "ko[0-9]*"))
+pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
+
+pathways_dt <- data.table(KO, pathways)
+pathways_dt
+```
+
+-downregulated:
+```{r}
+downregulated <- data.frame(kegg.sig$less)
+downregulated_pathways <- rownames(downregulated)
+
+KO <-  unlist(str_extract_all(downregulated_pathways, "ko[0-9]*"))
+pathways <- unlist(str_split(downregulated_pathways, "ko[0-9]*"))
+pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
+
+pathways_dt <- data.table(KO, pathways)
+pathways_dt
+```
+
+
+
+
+
+Usporedivanje klastera:
+```{r}
+cl1 <- which(data_info$samples[data_info$cluster == 1] %in% colnames(gage_dt))
+cl2 <- which(data_info$samples[data_info$cluster == 2] %in% colnames(gage_dt))
+cl3 <- which(data_info$samples[data_info$cluster == 3] %in% colnames(gage_dt))
+cl4 <- which(data_info$samples[data_info$cluster == 4] %in% colnames(gage_dt))
+```
+
+
+Metabolic Module Identification
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl1, compare = "unpaired")
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl2, compare = "unpaired")
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl3, compare = "unpaired")
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl4, compare = "unpaired")
+```
+
+
+Which genes are up- or downregulated in LD samples compred to HD samples:
+-upregulated:
+```{r}
+kegg.sig <- sigGeneSet(pathwayEnrich)
+upregulated <- data.frame(kegg.sig$greater)
+upregulated_pathways <- rownames(upregulated)
+
+KO <-  unlist(str_extract_all(upregulated_pathways, "ko[0-9]*"))
+pathways <- unlist(str_split(upregulated_pathways, "ko[0-9]*"))
+pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
+
+pathways_dt <- data.table(KO, pathways)
+print("upregulated")
+as.data.frame(pathways_dt)
+```
+
+-downregulated:
+```{r}
+downregulated <- data.frame(kegg.sig$less)
+downregulated_pathways <- rownames(downregulated)
+
+KO <-  unlist(str_extract_all(downregulated_pathways, "ko[0-9]*"))
+pathways <- unlist(str_split(downregulated_pathways, "ko[0-9]*"))
+pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
+
+pathways_dt <- data.table(KO, pathways)
+print("downregulated")
+pathways_dt
+```
+
+
+-usporedba klastera medusobno:
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl3, samp = cl5, compare = "unpaired")
+```
+
+
+Which genes are up- or downregulated in LD samples compred to HD samples:
+-upregulated:
+```{r}
+kegg.sig <- sigGeneSet(pathwayEnrich)
+upregulated <- data.frame(kegg.sig$greater)
+upregulated_pathways <- rownames(upregulated)
+
+KO <-  unlist(str_extract_all(upregulated_pathways, "ko[0-9]*"))
+pathways <- unlist(str_split(upregulated_pathways, "ko[0-9]*"))
+pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
+
+pathways_dt <- data.table(KO, pathways)
+print("upregulated")
+as.data.frame(pathways_dt)
+```
+
+-downregulated:
+```{r}
+downregulated <- data.frame(kegg.sig$less)
+downregulated_pathways <- rownames(downregulated)
+
+KO <-  unlist(str_extract_all(downregulated_pathways, "ko[0-9]*"))
+pathways <- unlist(str_split(downregulated_pathways, "ko[0-9]*"))
+pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
+
+pathways_dt <- data.table(KO, pathways)
+print("downregulated")
+pathways_dt
+```
+
+
+
+
+
+Najzanimljiviji dio:
+
+-usporedba samo bolesnih uzoraka medusobno:
+```{r}
+bolesni <- data_info[condition == "L"]
+unique(bolesni$cluster)
+```
+
+```{r}
+LD1 <- which(colnames(gage_dt) %in% bolesni$samples[bolesni$cluster == 1])
+LD2 <- which(colnames(gage_dt) %in% bolesni$samples[bolesni$cluster == 2])
+LD3 <- which(colnames(gage_dt) %in% bolesni$samples[bolesni$cluster == 4])
+```
+
+
+GAGE run
+```{r}
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = LD1, samp = LD2, compare = "unpaired")
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = LD1, samp = LD3, compare = "unpaired")
+pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = LD2, samp = LD3, compare = "unpaired")
+```
+
+
+-upregulated:
+```{r}
+kegg.sig <- sigGeneSet(pathwayEnrich)
+upregulated <- data.frame(kegg.sig$greater)
+upregulated_pathways <- rownames(upregulated)
+
+KO <-  unlist(str_extract_all(upregulated_pathways, "ko[0-9]*"))
+pathways <- unlist(str_split(upregulated_pathways, "ko[0-9]*"))
+pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
+
+pathways_dt <- data.table(KO, pathways)
+print("upregulated")
+as.data.frame(pathways_dt)
+```
+
+-downregulated:
+```{r}
+downregulated <- data.frame(kegg.sig$less)
+downregulated_pathways <- rownames(downregulated)
+
+KO <-  unlist(str_extract_all(downregulated_pathways, "ko[0-9]*"))
+pathways <- unlist(str_split(downregulated_pathways, "ko[0-9]*"))
+pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
+
+pathways_dt <- data.table(KO, pathways)
+print("downregulated")
+pathways_dt
+```
 
 
 
@@ -292,397 +750,29 @@ pheatmap(rfsrc_rf$proximity, cellheight = 4, cellwidth = 4, fontsize = 4, labels
 
 
 
-
-Metabolic Module Identification
-
-Preparation of reference pathways. We will be using the KO-annotated metabolic pathways.
 ```{r}
-path.set <- kegg.gsets("ko")
-ko.gs <- path.set$kg.sets
-```
-
-Extraction of fold-change (M) values for the samples.
-```{r}
-gage_dt <- samples[, c("category", "M", "samples")]
-gage_dt <- melt(gage_dt, id.var = c("samples", "category"))
-gage_dt <- gage_dt[, -3]
-gage_dt <- dcast(gage_dt, category ~ samples, fill = 0)
-gage_dt <- as.data.frame(gage_dt)
-rownames(gage_dt) <- gage_dt$category
-gage_dt <- gage_dt[, -1]
-```
-
-GAGE run
-```{r}
-pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = 1:80, compare = "unpaired")
-kegg.sig <- sigGeneSet(pathwayEnrich)
-```
-
-
-Which genes are up- or downregulated in LD samples compred to HD samples:
--upregulated:
-```{r}
-upregulated <- data.frame(kegg.sig$greater)
-upregulated_pathways <- rownames(upregulated)
-
-KO <-  unlist(str_extract_all(upregulated_pathways, "ko[0-9]*"))
-pathways <- unlist(str_split(upregulated_pathways, "ko[0-9]*"))
-pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
-
-pathways_dt <- data.table(KO, pathways)
-```
-
--downregulated:
-```{r}
-downregulated <- data.frame(kegg.sig$less)
-downregulated_pathways <- rownames(downregulated)
-
-KO <-  unlist(str_extract_all(downregulated_pathways, "ko[0-9]*"))
-pathways <- unlist(str_split(downregulated_pathways, "ko[0-9]*"))
-pathways <- pathways[rep(c(FALSE, TRUE), length(pathways)/2)]
-
-pathways_dt <- data.table(KO, pathways)
-pathways_dt
-```
-
-
-
-
-
-
-PCA plots:
-```{r}
-library(ggbiplot)
-PCA <- prcomp(RRF_RF$proximity, scale. = TRUE)
-
-PCAplot <- ggbiplot(PCA, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(RRF_RF$proximity), 1, 1))) + theme_classic()
-PCAplot
-
+prox <- extract_proximity(ranger_rf, sampleSet)
+clustering <- kmeans(prox, 3)
+data_info <- data.table(samples = rownames(sampleSet), condition = substr(rownames(sampleSet), 1, 1))
+data_info$cluster <- clustering$cluster
 
 PCA2 <- prcomp(prox, scale. = TRUE)
-
-PCAplot2 <- ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(RRF_RF$proximity), 1, 1))) + theme_classic()
-PCAplot2
-
-PCAplot
-PCAplot2
-
-clusters <- kmeans(random_forest$proximity, 3)
-cl1 <- names(which(clusters$cluster == 1))
-cl1 <- which(colnames(gage_dt) %in% cl1)
-
-cl2 <- names(which(clusters$cluster == 2))
-cl2 <- which(colnames(gage_dt) %in% cl2)
-
-cl3 <- names(which(clusters$cluster == 3))
-cl3 <- which(colnames(gage_dt) %in% cl3)
+ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(data_info$cluster)) + theme_classic()
 ```
 
-
-Metabolic Module Identification
-
-Preparation of reference pathways. We will be using the KO-annotated metabolic pathways.
-```{r}
-path.set <- kegg.gsets("ko")
-ko.gs <- path.set$kg.sets
-```
-
-Extraction of fold-change (M) values for the samples.
-```{r}
-gage_dt <- samples[, c("category", "M", "samples")]
-gage_dt <- melt(gage_dt, id.var = c("samples", "category"))
-gage_dt <- gage_dt[, -3]
-gage_dt <- dcast(gage_dt, category ~ samples, fill = 0)
-gage_dt <- as.data.frame(gage_dt)
-rownames(gage_dt) <- gage_dt$category
-gage_dt <- gage_dt[, -1]
-```
-
-
-Cluster 1:
-
-GAGE run
-```{r}
-pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl1, compare = "unpaired")
-kegg.sig <- sigGeneSet(pathwayEnrich)
-```
-
-
-Which genes are up- or downregulated in LD samples compred to HD samples:
--upregulated:
-```{r}
-upregulated1 <- data.frame(kegg.sig$greater)
-upregulated_pathways1 <- rownames(upregulated1)
-upregulated_pathways1
-```
-
--downregulated:
-```{r}
-downregulated1 <- data.frame(kegg.sig$less)
-downregulated_pathways1 <- rownames(downregulated1)
-downregulated_pathways1
-```
-
-
-
-Cluster 2:
-
-GAGE run
-```{r}
-pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl2, compare = "unpaired")
-kegg.sig <- sigGeneSet(pathwayEnrich)
-```
-
-
-Which genes are up- or downregulated in LD samples compred to HD samples:
--upregulated:
-```{r}
-upregulated2 <- data.frame(kegg.sig$greater)
-upregulated_pathways2 <- rownames(upregulated2)
-upregulated_pathways2
-```
-
--downregulated:
-```{r}
-downregulated2 <- data.frame(kegg.sig$less)
-downregulated_pathways2 <- rownames(downregulated2)
-downregulated_pathways2
-```
-
-
-
-Cluster 3:
-
-GAGE run
-```{r}
-pathwayEnrich <- gage(gage_dt, gsets = ko.gs, ref = cl3, compare = "unpaired")
-kegg.sig <- sigGeneSet(pathwayEnrich)
-```
-
-
-Which genes are up- or downregulated in LD samples compred to HD samples:
--upregulated:
-```{r}
-upregulated3 <- data.frame(kegg.sig$greater)
-upregulated_pathways3 <- rownames(upregulated3)
-upregulated_pathways3
-```
-
--downregulated:
-```{r}
-downregulated3 <- data.frame(kegg.sig$less)
-downregulated_pathways3 <- rownames(downregulated3)
-downregulated_pathways3
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Usporedba s ostalim podacima:
-```{r warning=FALSE}
-library(readxl)
-metadata <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\metadata.xlsx", col_types = c("text", "text", "numeric", "numeric", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "numeric", "numeric", "text"))
-
-metadata$`Sample ID` <- paste(str_extract(metadata$`Sample ID`, "[HL]D"), str_extract(metadata$`Sample ID`, "\\d+"), sep = "")
-```
-
-```{r}
-tablica <- copy(metadata)
-tablica$Gender[tablica$Gender == "female"] <- 1
-tablica$Gender[tablica$Gender == "male"] <- 0
-tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "Y"] <- 1
-tablica$`HBV related  (Y or N)`[tablica$`HBV related  (Y or N)` == "N"] <- 0
-tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "Y"] <- 1
-tablica$`Alcohol related (Y or N)`[tablica$`Alcohol related (Y or N)` == "N"] <- 0
-```
-
-```{r}
-#pairs(apply(as.matrix(tablica[, 2:10]), 2, as.numeric), col = as.numeric(sampleSet$condition) + 1)
-```
-
-
-
-```{r}
-metadt <- copy(tablica[which(tablica$`Sample ID` %in% names(dt_filtered2)), ])
-metadt$group <- 0
-
-metadt$group[metadt$`Sample ID` %in% grupa1$sample[which(substr(grupa1$sample, 1, 1) == "L")]] <- 1
-metadt$group[metadt$`Sample ID` %in% grupa2$sample[which(substr(grupa2$sample, 1, 1) == "L")]] <- 2
-metadt$group[metadt$`Sample ID` %in% grupa3$sample[which(substr(grupa3$sample, 1, 1) == "L")]] <- 3
-```
-
-
-
-Samo bolesni:
-```{r}
-bolesni <- metadata[substr(metadata$`Sample ID`, 1, 1) == "L", ]
-
-bolesni$Gender[bolesni$Gender == "female"] <- 1
-bolesni$Gender[bolesni$Gender == "male"] <- 0
-bolesni$`HBV related  (Y or N)`[bolesni$`HBV related  (Y or N)` == "Y"] <- 1
-bolesni$`HBV related  (Y or N)`[bolesni$`HBV related  (Y or N)` == "N"] <- 0
-bolesni$`Alcohol related (Y or N)`[bolesni$`Alcohol related (Y or N)` == "Y"] <- 1
-bolesni$`Alcohol related (Y or N)`[bolesni$`Alcohol related (Y or N)` == "N"] <- 0
-```
-
-```{r}
-PCA_metadt <- prcomp(apply(as.matrix(bolesni[, c(2:6, 8:12, 14:15)]), 2, as.numeric), scale. = TRUE)
-ggbiplot(PCA_metadt, ellipse = TRUE, var.axes = FALSE, groups = factor(bolesni$Gender)) + theme_classic()
-ggbiplot(PCA_metadt, ellipse = TRUE, var.axes = FALSE, groups = factor(bolesni$`Alcohol related (Y or N)`)) + theme_classic()
-PCA_metadt$rotation
-
-#pogledaj distribuciju varijabli i zakljuci sto izbaciti
-```
-
-
-Regresija:
-  -ovise li grupe o alkoholu ili HBV-u
-```{r}
-summary(lm(bolesni$group ~ bolesni$`HBV related  (Y or N)` + bolesni$`Alcohol related (Y or N)`))
-summary(lm(bolesni$group ~ bolesni$`Alcohol related (Y or N)`))
-```
 
 
 
 
 ```{r}
-#kako se razdvajaju ovisno o grupama (0 = healthy)
-PCA_metadt2 <- prcomp(apply(as.matrix(proba_dt[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
-ggbiplot(PCA_metadt2, ellipse = TRUE, var.axes = FALSE, groups = factor(proba_dt$group)) + theme_classic()
+clLD <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\clusters\\clLD.rds")
+HD50_56 <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\clusters\\HD50_56.rds")
+cl_separated <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\clusters\\cl_separated.rds")
+clHD <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\clusters\\clHD.rds")
+cl_LD75_LD97 <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\clusters\\cl_LD75_LD97.rds")
+cl_LD12_LD37 <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\clusters\\cl_LD12_LD37.rds")
+cl_LD49_41_48 <- readRDS("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\R\\clusters\\cl_LD49_41_48.rds")
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-PCA plots:
-
-S albuminom i bilirubinom:
-```{r}
-PCA1 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:10)]), 2, as.numeric), scale. = TRUE)
-ggbiplot(PCA1, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
-PCA1$rotation
-```
-
-Bez njih:
-```{r}
-PCA2 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:8)]), 2, as.numeric), scale. = TRUE)
-ggbiplot(PCA2, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
-```
-
-Bez bilirubina:
-```{r}
-PCA3 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:9)]), 2, as.numeric), scale. = TRUE)
-ggbiplot(PCA3, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
-```
-
-Bez albumina:
-```{r}
-PCA4 <- prcomp(apply(as.matrix(tablica[, c(2:4, 6:8, 10)]), 2, as.numeric), scale. = TRUE)
-ggbiplot(PCA4, ellipse = TRUE, var.axes = FALSE, groups = factor(substr(rownames(rlog_values), 1, 1))) + theme_classic()
-```
-
-
-
-
-
-
-
-PCA plots:
-```{r warning=FALSE}
-library(readxl)
-table1 <- read_excel("C:\\Users\\Maja\\Desktop\\Eva - diplomski\\60uzoraka.xlsx", col_types = c("text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "numeric", "numeric", "text", "text"))
-table1$`Sample ID` <- paste(str_extract(table1$`Sample ID`, "[HL]D"), str_extract(table1$`Sample ID`, "\\d+"), sep = "")
-table1 <- table1[, c(1, 3:8, 11:13)]
-```
-
-```{r}
-coldata <- data.frame(sample = unique(samples))
-coldata$condition <- "healthy"
-coldata$condition[which(substr(coldata$sample, 1, 1) == "L")] <- "cirrhotic"
-coldata$condition <- factor(coldata$condition, levels = c("healthy", "cirrhotic"))
-dataset <- DESeqDataSetFromMatrix(countData = dt, colData = coldata, design = ~ condition)
-```
-
-```{r}
-#pre-fitlering
-dataset <- dataset[ rowSums(counts(dataset) > 0) > 2, ]
-```
-
-```{r}
-rlog_values <- t(rlog(counts(dataset)))
-PCA <- prcomp(rlog_values, scale. = TRUE)
-```
-
-```{r}
-ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$Gender)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`HBV related  (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-ggbiplot(PCA, ellipse = F, var.axes = FALSE, groups = factor(table1$`Alcohol related (Y or N)`)) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-```
-
-```{r}
-BMIs <- cut(table1$`BMI (kg/m2)`, quantile(table1$`BMI (kg/m2)`))
-ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = BMIs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-```
-
-
-```{r}
-TBs <- factor(round(log(table1$`TB (umol/L)`)*2))
-ggbiplot(PCA, choices = c(2,3), ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() + stat_ellipse(aes(group = coldata$condition))
-ggbiplot(PCA, ellipse = T, var.axes = FALSE, groups = TBs) + theme_classic() 
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
